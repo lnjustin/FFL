@@ -172,7 +172,8 @@ def initialize() {
         update()
         updateDevice()
         scheduleWeekAdvance()
-        scheduleUpdates()
+       // scheduleInGameUpdates()
+        outOfGameUpdate()
     }
 }
 
@@ -187,36 +188,62 @@ def scheduleWeekAdvance() {
     }
 }
 
-def scheduleUpdates() {
-    def hour = (updateFrequencyOutOfGame / 60)
-    hour = hour.setScale(0, java.math.RoundingMode.DOWN)
-    def min = updateFrequencyOutOfGame % 60
-    def updateChron = "0 ${min} ${hour} ? * *"
-    schedule(updateChron, update)
+def outOfGameUpdate() {
+    update()
+    runIn(updateFrequencyOutOfGame*60, outOfGameUpdate)
+}
 
+def scheduleInGameUpdates() {
     def allProTeams = []
     def selectedTeamIDs = matchupTileTeams.collect {it as Integer}
     for (teamId in selectedTeamIDs) {
         def team = state.teams[teamId]
         def proTeams = team.roster.collect {it.proTeamId}
-        allProTeams += proTeams
+        allProTeams.addAll(proTeams)
     }
-    
+    logDebug("allProTeams = " + allProTeams)
+
     def gameStartTimes = []
     def proSchedules = fetchProSchedules()
     if (proSchedules) {
-        def proTeams = result?.settings?.proTeams
+        def proTeams = proSchedules?.settings?.proTeams
         for (team in proTeams) {
-            def games = team.proGamesByScoringPeriod.findAll { it.scoringPeriodId == state.currentScoringPeriodId && it.startTimeTBD == false && (it.awayProTeamId in selectedTeamIDs || it.homeProTeamId in selectedTeamIDs)}
-            for (game in games) {
-                gameStartTimes.add(game.date)
+            def gamesByTeam = team.proGamesByScoringPeriod
+            for (teamGames in gamesByTeam) {
+                teamGames.eachWithIndex { scoringPeriodId, gameDataArray, index ->
+                def gameData = gameDataArray[0]
+                 //   if (index == 0) logDebug("scoringPeriodId = " + scoringPeriodId + " gameData = " + gameData)
+                    
+                    if (gameData.scoringPeriodId as Integer == state.scoringPeriod && gameData.startTimeTBD == false && (gameData.awayProTeamId in allProTeams || gameData.homeProTeamId in allProTeams)) {
+                        gameStartTimes.add(gameData.date)
+                        def obj = new Date(gameData.date)
+                        def home = PRO_TEAM_MAP[gameData.homeProTeamId]
+                        def away = PRO_TEAM_MAP[gameData.awayProTeamId]
+                        logDebug("Game on " + (obj as String) + " " + home + " v " + away)
+                    }
+                }
             }
         }
     }
+    else logDebug("Warning: no proSchedules fetched")
+
+    logDebug("gameStartTimes = " + gameStartTimes)
+
     gameStartTimes = gameStartTimes.unique()
+    logDebug("gameStartTimes Unique = " + gameStartTimes)
+
+    def objArray = []
+    for (startTime in gameStartTimes) {
+        def obj = new Date(startTime)
+        objArray.add(obj)
+    }
+    logDebug("game start times: " + objArray)
+
+    def now = new Date()
     def numUpdatesInGame = ((3*60) / updateFrequencyInGame).setScale(0, java.math.RoundingMode.DOWN)
     for (startTime in gameStartTimes) {
-        runOnce(startTime, updateInGame, [data: [count: numUpdatesInGame], overwrite: false])
+        def startDate = new Date(startTime)
+        if (startDate.after(now)) runOnce(startDate, updateInGame, [data: [count: numUpdatesInGame], overwrite: false])
     }
 }
 
@@ -237,8 +264,8 @@ def update() {
         state.teamCount = leagueData.size
         state.scoringType = leagueData.scoringSettings?.scoringType
 
-        state.scoringPeriod = leagueData.scoringPeriodId
-        state.finalScoringPeriod = leagueData.status?.finalScoringPeriod
+        state.scoringPeriod = leagueData.scoringPeriodId as Integer
+        state.finalScoringPeriod = leagueData.status?.finalScoringPeriod as Integer
         state.week = (state.scoringPeriod <= state.finalScoringPeriod) ? state.scoringPeriod : state.finalScoringPeriod
         state.seasonId = leagueData.seasonId
         state.currentMatchupPeriod = leagueData.status?.currentMatchupPeriod
@@ -308,7 +335,7 @@ def update() {
                          if (thisPlayer.position != 'BE' && thisPlayer.position != 'IR') {
                             if (thisPlayer.injuryStatus == "OUT") thisTeam.startingInjuredPlayer = true
                             if (thisPlayer.injuryStatus2 == "OUT") thisTeam.startingInjuredPlayer = true
-                            if (thisPlayer.injured == true && thisPlayer.stats && thisPlayer.stats[state.currentScoringPeriodId]?.projectedPoints == 0) thisTeam.startingInjuredPlayer = true
+                            if (thisPlayer.injured == true && thisPlayer.stats && thisPlayer.stats[state.scoringPeriod]?.projectedPoints == 0) thisTeam.startingInjuredPlayer = true
                          }
                     }
                 }
@@ -383,8 +410,8 @@ def getDayOfWeek(Date date) {
 def advanceMatchupDisplayed() {
     def leagueData = fetchLeague()
     if (leagueData) {
-        state.scoringPeriod = leagueData.scoringPeriodId
-        state.finalScoringPeriod = leagueData.status?.finalScoringPeriod
+        state.scoringPeriod = leagueData.scoringPeriodId as Integer
+        state.finalScoringPeriod = leagueData.status?.finalScoringPeriod as Integer
         state.week = (state.scoringPeriod <= state.finalScoringPeriod) ? state.scoringPeriod : state.finalScoringPeriod
         state.seasonId = leagueData.seasonId
         state.currentMatchupPeriod = leagueData.status?.currentMatchupPeriod

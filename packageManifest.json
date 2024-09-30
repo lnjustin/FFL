@@ -1,9 +1,9 @@
 {
   "packageName": "FFL",
   "author": "lnjustin",
-  "version": "1.0",
+  "version": "1.01",
   "minimumHEVersion": "2.1.9",
-  "dateReleased": "2024-09-26",
+  "dateReleased": "2024-09-30",
   "apps": [
     {
       "id": "2b70e26b-9359-4097-8ade-fd1ebaca14b2",

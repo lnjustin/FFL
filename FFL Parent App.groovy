@@ -13,7 +13,9 @@
  *  for the specific language governing permissions and limitations under the License.
  *
  *  Change History:
- *  
+ *  v1.0.0 - initial alpha release
+ *  v1.0.1 - update bug fix
+ *  v1.0.2 - ingame update bug fix
  */
 import java.text.SimpleDateFormat
 import groovy.transform.Field

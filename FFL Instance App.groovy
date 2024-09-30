@@ -169,11 +169,10 @@ def initialize() {
     instantiateToken()
     if (!settings["disabled"] && leagueId && swidCookie && espnS2Cookie) {
         createChild()
-        update()
+        updateOutOfGame()
         updateDevice()
         scheduleWeekAdvance()
-       // scheduleInGameUpdates()
-        outOfGameUpdate()
+        scheduleInGameUpdates()
     }
 }
 
@@ -188,12 +187,14 @@ def scheduleWeekAdvance() {
     }
 }
 
-def outOfGameUpdate() {
+def updateOutOfGame() {
     update()
-    runIn(updateFrequencyOutOfGame*60, outOfGameUpdate)
+    runIn(updateFrequencyOutOfGame*60, updateOutOfGame)
 }
 
 def scheduleInGameUpdates() {
+    def now = new Date()
+
     def allProTeams = []
     def selectedTeamIDs = matchupTileTeams.collect {it as Integer}
     for (teamId in selectedTeamIDs) {
@@ -203,7 +204,7 @@ def scheduleInGameUpdates() {
     }
     logDebug("allProTeams = " + allProTeams)
 
-    def gameStartTimes = []
+    def gameStartTimesEpoch = []
     def proSchedules = fetchProSchedules()
     if (proSchedules) {
         def proTeams = proSchedules?.settings?.proTeams
@@ -212,14 +213,12 @@ def scheduleInGameUpdates() {
             for (teamGames in gamesByTeam) {
                 teamGames.eachWithIndex { scoringPeriodId, gameDataArray, index ->
                 def gameData = gameDataArray[0]
-                 //   if (index == 0) logDebug("scoringPeriodId = " + scoringPeriodId + " gameData = " + gameData)
-                    
-                    if (gameData.scoringPeriodId as Integer == state.scoringPeriod && gameData.startTimeTBD == false && (gameData.awayProTeamId in allProTeams || gameData.homeProTeamId in allProTeams)) {
-                        gameStartTimes.add(gameData.date)
-                        def obj = new Date(gameData.date)
+                    def date = new Date(gameData.date)
+                    if (date.after(now) && gameData.scoringPeriodId as Integer == state.scoringPeriod && gameData.startTimeTBD == false && (gameData.awayProTeamId in allProTeams || gameData.homeProTeamId in allProTeams)) {
+                        gameStartTimesEpoch.add(gameData.date)
                         def home = PRO_TEAM_MAP[gameData.homeProTeamId]
                         def away = PRO_TEAM_MAP[gameData.awayProTeamId]
-                        logDebug("Game on " + (obj as String) + " " + home + " v " + away)
+                        logDebug("Index = " + index + " out of " + teamGames.size() + " Game on " + (date as String) + " " + home + " v " + away)
                     }
                 }
             }
@@ -227,23 +226,19 @@ def scheduleInGameUpdates() {
     }
     else logDebug("Warning: no proSchedules fetched")
 
-    logDebug("gameStartTimes = " + gameStartTimes)
+    gameStartTimesEpoch = gameStartTimesEpoch.unique()
 
-    gameStartTimes = gameStartTimes.unique()
-    logDebug("gameStartTimes Unique = " + gameStartTimes)
-
-    def objArray = []
-    for (startTime in gameStartTimes) {
-        def obj = new Date(startTime)
-        objArray.add(obj)
+    def gameStartTimes = []
+    for (startTime in gameStartTimesEpoch) {
+        def date = new Date(startTime)
+        gameStartTimes.add(date)
     }
-    logDebug("game start times: " + objArray)
+    logDebug("game start times: " + gameStartTimes)
 
-    def now = new Date()
+    
     def numUpdatesInGame = ((3*60) / updateFrequencyInGame).setScale(0, java.math.RoundingMode.DOWN)
     for (startTime in gameStartTimes) {
-        def startDate = new Date(startTime)
-        if (startDate.after(now)) runOnce(startDate, updateInGame, [data: [count: numUpdatesInGame], overwrite: false])
+        if (startTime.after(now)) runOnce(startTime, updateInGame, [data: [count: numUpdatesInGame], overwrite: false])
     }
 }
 

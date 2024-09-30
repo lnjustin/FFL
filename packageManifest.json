@@ -1,0 +1,43 @@
+{
+  "packageName": "FFL",
+  "author": "lnjustin",
+  "version": "1.0",
+  "minimumHEVersion": "2.1.9",
+  "dateReleased": "2024-09-26",
+  "apps": [
+    {
+      "id": "2b70e26b-9359-4097-8ade-fd1ebaca14b2",
+      "name": "FFL",
+      "namespace": "lnjustin",
+      "location": "https://raw.githubusercontent.com/lnjustin/FFL/refs/heads/main/FFL%20Parent%20App.groovy",
+      "required": true,
+      "oauth": true,
+      "primary": false
+    },
+    {
+      "id": "48cfe90a-4645-4188-9965-d0192e36c5d8",
+      "name": "FFL Instance",
+      "namespace": "lnjustin",
+      "location": "https://raw.githubusercontent.com/lnjustin/FFL/refs/heads/main/FFL%20Instance%20App.groovy",
+      "required": true,
+      "oauth": true,
+      "primary": false
+    }
+  ],
+  "drivers": [
+    {
+      "id": "77d19204-2e79-4eb2-9d14-034eb4da1793",
+      "name": "FFL",
+      "namespace": "lnjustin",
+      "location": "https://raw.githubusercontent.com/lnjustin/FFL/refs/heads/main/FFL%20Parent%20Device.groovy",
+      "required": true
+    },
+    {
+      "id": "5b46b39a-544f-4da1-a493-792b3bb17728",
+      "name": "FFL Child",
+      "namespace": "lnjustin",
+      "location": "https://raw.githubusercontent.com/lnjustin/FFL/refs/heads/main/FFL%20Child%20Device.groovy",
+      "required": true
+    }
+  ]
+}

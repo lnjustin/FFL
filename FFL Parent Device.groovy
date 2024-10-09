@@ -30,7 +30,19 @@ metadata
                 [
                      "name":"Set Tile Text Color",
                      "description":"Set the color of the text on your tile(s). Hex format with leading #).",
-                     "type":"text"
+                     "type":"STRING"
+                ]
+             ]
+        )
+
+        command(
+             "setTileIconColor", 
+             [
+                [
+                     "name":"Set Tile Icon Color",
+                     "description":"Set the color of the icon(s) on your tile(s). Hex format with leading #).",
+                     "type":"ENUM",
+                     "constraints": ["black","white"]
                 ]
              ]
         )
@@ -75,11 +87,11 @@ def configure()
 }
 
 def setTileTextColor(color) {
-    parent?.settingUpdate("textColor", color, "string") 
+    parent?.updateTileTextColor(color)
 }
 
 def setTileIconColor(color) {
-    parent?.settingUpdate("iconColor", color, "string") 
+    parent?.updateTileIconColor(color)
 }
 
 def on() {

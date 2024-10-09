@@ -29,29 +29,6 @@ metadata
         attribute "tile4", "string"
         attribute "tile5", "string"
         attribute "tile6", "string" 
-        
-        command(
-             "setTileTextColor", 
-             [
-                [
-                     "name":"Set Tile Text Color",
-                     "description":"Set the color of the text on your tile(s). Hex format with leading #).",
-                     "type":"text"
-                ]
-             ]
-        )
-
-        command(
-             "setTileIconColor", 
-             [
-                [
-                     "name":"Set Tile Text Color",
-                     "description":"Set the color of the icon(s) on your tile(s). Hex format with leading #).",
-                     "type":"ENUM",
-                     "constraints": ["black","white"]
-                ]
-             ]
-        )
     }
 }
 
@@ -92,14 +69,6 @@ def parse(String description)
 def configure()
 {    
     refresh()
-}
-
-def setTileTextColor(color) {
-    parent.setTileTextColor(app.id, color)
-}
-
-def setTileIconColor(color) {
-    parent.setTileIconColor(app.id, color)
 }
 
 def updateDevicesForLeague(leagueDeviceData, teamDevicesData) {

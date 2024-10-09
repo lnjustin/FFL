@@ -187,6 +187,7 @@ def initialize() {
     instantiateToken()
     if (!settings["disabled"] && leagueId && swidCookie && espnS2Cookie) {
         createDevices()
+        advanceWeek()
         updateOutOfGame()
         scheduleWeekAdvance()
         scheduleUpdateAtGametimes()
@@ -584,7 +585,7 @@ def getMatchupForTeam(teamId) {
             }
         }
     }   
-    logDebug("No Matchup Found for Team " + teamId)
+    logDebug("No Matchup Found for Team " + teamId + " for matchup period " + state.matchupPeriodToDisplay)
 }
 
 def getTeamMatchupTile(teamId) {  

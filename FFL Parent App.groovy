@@ -17,6 +17,7 @@
  *  v1.0.1 - update bug fix
  *  v1.0.2 - ingame update bug fix
  *  v1.1.0 - Added league/team child devices, in-play stats
+ *  v1.1.1 - Fix tile color commands; add advanceWeek() call to initialize
  */
 import java.text.SimpleDateFormat
 import groovy.transform.Field
@@ -125,9 +126,24 @@ def initialize() {
     }
 }
 
+def updateTileTextColor(color) {
+    childApps.each { child ->
+     //   child.settingUpdate("textColor", color, "string")   
+        child.updateSetting("textColor", [value: color, type: "string"]) 
+        child.update()             
+    }
+}
+
+def updateTileIconColor(color) {
+    childApps.each { child ->
+        child.updateSetting("iconColor", [value: color, type: "enum"]) 
+        child.update() 
+    } 
+}
+
 def refreshChildApps() {
     childApps.each { child ->
-        child.update(false)                
+        child.update()                
     }
 }
 

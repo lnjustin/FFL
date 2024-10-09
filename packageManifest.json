@@ -1,9 +1,9 @@
 {
   "packageName": "FFL",
   "author": "lnjustin",
-  "version": "1.02",
+  "version": "1.1.0",
   "minimumHEVersion": "2.1.9",
-  "dateReleased": "2024-09-30",
+  "dateReleased": "2024-10-09",
   "apps": [
     {
       "id": "2b70e26b-9359-4097-8ade-fd1ebaca14b2",
@@ -33,10 +33,17 @@
       "required": true
     },
     {
-      "id": "5b46b39a-544f-4da1-a493-792b3bb17728",
-      "name": "FFL Child",
+      "id": "6f54da49-349f-439c-aed4-ac21816604de",
+      "name": "FFL League",
       "namespace": "lnjustin",
-      "location": "https://raw.githubusercontent.com/lnjustin/FFL/refs/heads/main/FFL%20Child%20Device.groovy",
+      "location": "https://raw.githubusercontent.com/lnjustin/FFL/refs/heads/main/FFL%20League%20Device.groovy",
+      "required": true
+    },
+    {
+      "id": "b2b89737-1bec-409b-bacf-94b16be90e96",
+      "name": "FFL Team",
+      "namespace": "lnjustin",
+      "location": "https://raw.githubusercontent.com/lnjustin/FFL/refs/heads/main/FFL%20Team%20Device.groovy",
       "required": true
     }
   ]

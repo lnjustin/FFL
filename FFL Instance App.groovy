@@ -41,19 +41,31 @@ definition(
 @Field String injuryIcon = "https://raw.githubusercontent.com/lnjustin/App-Images/master/FFL/first-aid-box.png"
 @Field String projectedIcon = "https://raw.githubusercontent.com/lnjustin/App-Images/master/FFL/projectedIcon.png"
 @Field String projectedIconLight = "https://raw.githubusercontent.com/lnjustin/App-Images/master/FFL/projectedIcon_light.png"
+@Field String inPlayIcon = "https://github.com/lnjustin/App-Images/raw/refs/heads/master/FFL/Button-Green.svg"
+@Field String minsLeftIconLight = "https://raw.githubusercontent.com/lnjustin/App-Images/master/FFL/stopwatchWhite.png"
+@Field String minsLeftIcon = "https://raw.githubusercontent.com/lnjustin/App-Images/master/FFL/stopwatchBlack.png"
+@Field String byeWeekIconLight = "https://raw.githubusercontent.com/lnjustin/App-Images/master/FFL/byeWeekLight.png"
+@Field String byeWeekIcon = "https://raw.githubusercontent.com/lnjustin/App-Images/master/FFL/byeWeek.png"
 
 @Field daysOfWeekList = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
 @Field daysOfWeekShortMap = ["Sunday":"SUN", "Monday":"MON", "Tuesday":"TUE", "Wednesday":"WED", "Thursday":"THU", "Friday":"FRI", "Saturday":"SAT"]
 @Field daysOfWeekMap = ["Sunday":1, "Monday":2, "Tuesday":3, "Wednesday":4, "Thursday":5, "Friday":6, "Saturday":7]
 @Field months = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"]
+@Field MINS_PER_PRO_GAME = 60
+@Field MINS_PER_PRO_GAME_PERIOD = 15
 
 mappings
 {
-    path("/ffl/matchupTile/:appId/:tileNum") { action: [ GET: "fetchMatchupTile"] }
+    path("/ffl/leagueMatchupTile/:appId/:tileNum") { action: [ GET: "fetchLeagueMatchupTile"] }
+    path("/ffl/teamMatchupTile/:appId/:teamId") { action: [ GET: "fetchTeamMatchupTile"] }
 }
 
-def getMatchupTileEndpoint(tileNum) {
-    return getFullApiServerUrl() + "/ffl/matchupTile/${app.id}/${tileNum}?access_token=${state.accessToken}"    
+def getLeagueMatchupTileEndpoint(tileNum) {
+    return getFullApiServerUrl() + "/ffl/leagueMatchupTile/${app.id}/${tileNum}?access_token=${state.accessToken}"    
+}
+
+def getTeamMatchupTileEndpoint(teamId) {
+    return getFullApiServerUrl() + "/ffl/teamMatchupTile/${app.id}/${teamId}?access_token=${state.accessToken}"    
 }
 
 def getUpdateInterval() {
@@ -83,15 +95,21 @@ def mainPage() {
 
             }
             if (leagueId && swidCookie && espnS2Cookie) {
-                section (getInterface("header", " Matchup Tile Settings")) {     
-                    def teamsEnum = getTeamNamesEnum()           
-                    input("matchupTileTeams", "enum", title: "Select Team(s) to Show on Tile", options: teamsEnum, required: true, multiple: true, submitOnChange: true)
-                    input("showTeamName", "bool", title: "Show Team Name?", defaultValue: true, displayDuringSetup: false, required: false)
-                    input("showTeamOwnerFirstName", "bool", title: "Show Team Owner First Name?", defaultValue: true, displayDuringSetup: false, required: false)
-                    input("showTeamOwnerLastName", "bool", title: "Show Team Owner Last Name?", defaultValue: true, displayDuringSetup: false, required: false)
+                def teamsEnum = getTeamNamesEnum()           
+                section (getInterface("header", " Teams Setup")) {
+                    input("followedTeams", "enum", title: "Select Team(s) to Follow", options: teamsEnum, required: true, multiple: true, submitOnChange: true)
+                    
+                }
+                section (getInterface("header", " Week Setup")) {
+                    input name: "dayOfWeekToAdvanceWeek", title: "Day on which to Advance FFL Week", type: "enum", options: ["Tuesday", "Wednesday", "Thursday"], width: 6
+                    input name: "timeOfDayToAdvanceWeek", title: "Time of Day at which to Advance FFL Week", type: "time", width: 6
+                }
+                section (getInterface("header", " Matchup Tile Setup")) {     
+                    input("showTeamName", "bool", title: "Show Team Name?", defaultValue: false, displayDuringSetup: false, required: false)
+                    input("showTeamOwnerFirstName", "bool", title: "Show Team Owner First Name?", defaultValue: false, displayDuringSetup: false, required: false)
+                    input("showTeamOwnerLastName", "bool", title: "Show Team Owner Last Name?", defaultValue: false, displayDuringSetup: false, required: false)
+                    input("showMinsLeft", "bool", title: "Show Minutes Left?", defaultValue: false, displayDuringSetup: false, required: false)
                     input("showTeamRecord", "bool", title: "Show Team Record After Matchup Final?", defaultValue: true, displayDuringSetup: false, required: false)
-                    input name: "dayOfWeekToAdvanceMatchup", title: "Day of Week to Advance Matchup Shown", type: "enum", options: ["Tuesday", "Wednesday", "Thursday"], width: 6
-                    input name: "timeOfDayToAdvanceMatchup", title: "Time of Day to Advance Matchup Shown", type: "time", width: 6
                     input(name:"scoreFontSize", type: "number", title: "Matchup Tile Font Size for Earned Score (%)", required:true, defaultValue:100, width: 6)
                     input(name:"projectedScoreFontSize", type: "number", title: "Matchup Tile Font Size for Projected Score (%)", required:true, defaultValue:100, width: 6)
                     input(name:"teamInfoFontSize", type: "number", title: "Matchup Tile Font Size for Team Info (%)", required:true, defaultValue:100, width: 6)
@@ -161,29 +179,28 @@ def updated() {
 }
 
 def uninstalled() {
-    deleteChild()
+    deleteDevices()
 	logDebug "Uninstalled app"
 }
 
 def initialize() {
     instantiateToken()
     if (!settings["disabled"] && leagueId && swidCookie && espnS2Cookie) {
-        createChild()
+        createDevices()
         updateOutOfGame()
-        updateDevice()
         scheduleWeekAdvance()
-        scheduleInGameUpdates()
+        scheduleUpdateAtGametimes()
     }
 }
 
 def scheduleWeekAdvance() {
-    if (timeOfDayToAdvanceMatchup && dayOfWeekToAdvanceMatchup) {
-        def advanceTime = toDateTime(timeOfDayToAdvanceMatchup)
+    if (timeOfDayToAdvanceWeek && dayOfWeekToAdvanceWeek) {
+        def advanceTime = toDateTime(timeOfDayToAdvanceWeek)
         def hour = advanceTime.format("H")
         def min = advanceTime.format("m")
-        def advanceDay = daysOfWeekShortMap[dayOfWeekToAdvanceMatchup]
+        def advanceDay = daysOfWeekShortMap[dayOfWeekToAdvanceWeek]
         def advanceChron = "0 ${min} ${hour} ? * ${advanceDay}"
-        schedule(advanceChron, advanceMatchupDisplayed)
+        schedule(advanceChron, advanceWeek)
     }
 }
 
@@ -192,17 +209,16 @@ def updateOutOfGame() {
     runIn(updateFrequencyOutOfGame*60, updateOutOfGame)
 }
 
-def scheduleInGameUpdates() {
+def scheduleUpdateAtGametimes() {
     def now = new Date()
 
     def allProTeams = []
-    def selectedTeamIDs = matchupTileTeams.collect {it as Integer}
+    def selectedTeamIDs = followedTeams.collect {it as Integer}
     for (teamId in selectedTeamIDs) {
         def team = state.teams[teamId]
         def proTeams = team.roster.collect {it.proTeamId}
         allProTeams.addAll(proTeams)
     }
-    logDebug("allProTeams = " + allProTeams)
 
     def gameStartTimesEpoch = []
     def proSchedules = fetchProSchedules()
@@ -218,7 +234,6 @@ def scheduleInGameUpdates() {
                         gameStartTimesEpoch.add(gameData.date)
                         def home = PRO_TEAM_MAP[gameData.homeProTeamId]
                         def away = PRO_TEAM_MAP[gameData.awayProTeamId]
-                        logDebug("Index = " + index + " out of " + teamGames.size() + " Game on " + (date as String) + " " + home + " v " + away)
                     }
                 }
             }
@@ -231,23 +246,13 @@ def scheduleInGameUpdates() {
     def gameStartTimes = []
     for (startTime in gameStartTimesEpoch) {
         def date = new Date(startTime)
-        gameStartTimes.add(date)
+        def offsetDate = adjustDateByMins(date, 1)  // update 1 minute after game time, to ensure updated
+        gameStartTimes.add(offsetDate)
     }
-    logDebug("game start times: " + gameStartTimes)
+   // logDebug("game start times: " + gameStartTimes)
 
-    
-    def numUpdatesInGame = ((3*60) / updateFrequencyInGame).setScale(0, java.math.RoundingMode.DOWN)
     for (startTime in gameStartTimes) {
-        if (startTime.after(now)) runOnce(startTime, updateInGame, [data: [count: numUpdatesInGame], overwrite: false])
-    }
-}
-
-def updateInGame(data) {
-    def count = data.count
-    update()
-    count--
-    if (count > 0) {
-        runIn(updateFrequencyInGame * 60, updateInGame, [data: [count: count], overwrite: false])
+        if (startTime.after(now)) runOnce(startTime, update, [overwrite: false])
     }
 }
 
@@ -255,7 +260,7 @@ def update() {
     logDebug("Update()...")
     def leagueData = fetchLeague()
     if (leagueData) {
-        state.leagueName = leagueData.name
+        state.leagueName = leagueData.settings?.name
         state.teamCount = leagueData.size
         state.scoringType = leagueData.scoringSettings?.scoringType
 
@@ -342,56 +347,102 @@ def update() {
     }
     else logDebug("Warning: No League Data Retrieved")
 
-    def matchupData = fetchMatchupScores()
-    if (matchupData) {
-        def matchups = []
-        matchupData['schedule'].each { matchup ->
-         //   logDebug("Retrieved matchup: " + matchup)
+    def teamsInPlay = []
+
+    def liveScoringResult = fetchLiveScoring()
+    def scoreboardData = fetchScoreboard()
+    if (liveScoringResult && scoreboardData) {
+        def scoreboard = []
+        def matchupIdMap = liveScoringResult.schedule
+        scoreboardData.schedule.eachWithIndex { matchup, index ->
             def thisMatchup = [:]
-            thisMatchup.matchupPeriod = matchup.matchupPeriodId
+            def matchupPeriodId = matchupIdMap[index]?.matchupPeriodId
+            thisMatchup.matchupPeriod = matchupPeriodId
 
-            thisMatchup.away = [teamId: matchup.away.teamId, totalPoints: matchup.away.totalPoints]
-            if (matchup.away.totalPointsLive) thisMatchup.away.totalPointsLive = matchup.away.totalPointsLive
-        //    if (matchup.away.totalProjectedPointsLive) thisMatchup.away.totalProjectedPointsLive = matchup.away.totalProjectedPointsLive
-            if (matchup.away.tiebreak) thisMatchup.away.tiebreak = matchup.away.tiebreak
-            if (matchup.away.rosterForCurrentScoringPeriod) {
-                thisMatchup.away.lineup = getLineup(matchup.away.rosterForCurrentScoringPeriod.entries)
-                if (matchup.winner == "UNDECIDED") {
+            if (matchup.away) {
+                thisMatchup.away = [:]
+                thisMatchup.away.teamId = matchup.away.teamId
+                thisMatchup.away.totalPoints = matchup.away.totalPoints
+                if (matchup.away.totalPointsLive) thisMatchup.away.totalPointsLive = matchup.away.totalPointsLive
+                if (matchup.away.totalProjectedPointsLive) thisMatchup.away.totalProjectedPointsLive = formatDecimal(matchup.away.totalProjectedPointsLive)
+                if (matchup.away.tiebreak) thisMatchup.away.tiebreak = matchup.away.tiebreak
+                if (matchup.away.rosterForCurrentScoringPeriod) {
+                    thisMatchup.away.lineup = getLineup(matchup.away.rosterForCurrentScoringPeriod.entries)
+
+                    thisMatchup.away.minsLeft = 0
+                    thisMatchup.away.numCurrentlyPlaying = 0
+                    thisMatchup.away.numYetToPlay = 0
                     for (player in thisMatchup.away.lineup) {
-                        if (player.projectedPoints && player.position != 'BE' && player.position != 'IR') {
-                            if (thisMatchup.away.projectedScore == null) thisMatchup.away.projectedScore = player.projectedPoints
-                            else thisMatchup.away.projectedScore += player.projectedPoints
+                        if (player.position != 'BE' && player.position != 'IR') {
+                            if (player.game?.minsLeft != null) thisMatchup.away.minsLeft += (player.game?.minsLeft as Integer)
+                            if (player.game?.status == "in") thisMatchup.away.numCurrentlyPlaying += 1
+                            else if (player.game?.status == "pre") thisMatchup.away.numYetToPlay += 1
                         }
                     }
-                }
-                else thisMatchup.away.projectedScore = matchup.away.totalPoints
-            }
+                    if (thisMatchup.away.numCurrentlyPlaying > 0) teamsInPlay.add(thisMatchup.away.teamId)
 
-            thisMatchup.home = [teamId: matchup.home.teamId, totalPoints: matchup.home.totalPoints]
-            if (matchup.home.totalPointsLive) thisMatchup.home.totalPointsLive = matchup.home.totalPointsLive
-        //    if (matchup.home.totalProjectedPointsLive) thisMatchup.home.totalProjectedPointsLive = matchup.home.totalProjectedPointsLive
-            if (matchup.home.tiebreak) thisMatchup.home.tiebreak = matchup.home.tiebreak
-            if (matchup.home.rosterForCurrentScoringPeriod) {
-                thisMatchup.home.lineup = getLineup(matchup.home.rosterForCurrentScoringPeriod.entries)
-                if (matchup.winner == "UNDECIDED") {
+                    if (matchup.winner == "UNDECIDED") {
+                        for (player in thisMatchup.away.lineup) {
+                            if (player.projectedPoints && player.position != 'BE' && player.position != 'IR') {
+                                if (thisMatchup.away.projectedScore == null) thisMatchup.away.projectedScore = player.projectedPoints
+                                else thisMatchup.away.projectedScore += player.projectedPoints
+                            }
+                        }
+                    }
+                    else thisMatchup.away.projectedScore = matchup.away.totalPoints
+                }
+            }
+            
+            if (matchup.home) {
+                thisMatchup.home = [:]
+                thisMatchup.home.teamId = matchup.home.teamId
+                thisMatchup.home.totalPoints = matchup.home.totalPoints
+                if (matchup.home.totalPointsLive) thisMatchup.home.totalPointsLive = matchup.home.totalPointsLive
+                if (matchup.home.totalProjectedPointsLive) thisMatchup.home.totalProjectedPointsLive = formatDecimal(matchup.home.totalProjectedPointsLive)
+                if (matchup.home.tiebreak) thisMatchup.home.tiebreak = matchup.home.tiebreak
+                if (matchup.home.rosterForCurrentScoringPeriod) {
+                    thisMatchup.home.lineup = getLineup(matchup.home.rosterForCurrentScoringPeriod.entries)
+
+                    thisMatchup.home.minsLeft = 0
+                    thisMatchup.home.numCurrentlyPlaying = 0
+                    thisMatchup.home.numYetToPlay = 0
                     for (player in thisMatchup.home.lineup) {
-                        if (player.projectedPoints && player.position != 'BE' && player.position != 'IR') {
-                            if (thisMatchup.home.projectedScore == null) thisMatchup.home.projectedScore = player.projectedPoints
-                            else thisMatchup.home.projectedScore += player.projectedPoints
+                        if (player.position != 'BE' && player.position != 'IR') {
+                            if (player.game?.minsLeft != null) thisMatchup.home.minsLeft += (player.game?.minsLeft as Integer)
+                            if (player.game?.status == "in") thisMatchup.home.numCurrentlyPlaying += 1
+                            else if (player.game?.status == "pre") thisMatchup.home.numYetToPlay += 1
                         }
                     }
-                }
-                else thisMatchup.home.projectedScore = matchup.home.totalPoints
-            }
+                    if (thisMatchup.home.numCurrentlyPlaying > 0) teamsInPlay.add(thisMatchup.home.teamId)
 
+                    if (matchup.winner == "UNDECIDED") {
+                        for (player in thisMatchup.home.lineup) {
+                            if (player.projectedPoints && player.position != 'BE' && player.position != 'IR') {
+                                if (thisMatchup.home.projectedScore == null) thisMatchup.home.projectedScore = formatDecimal(player.projectedPoints)
+                                else thisMatchup.home.projectedScore += player.projectedPoints
+                            }
+                        }
+                    }
+                    else thisMatchup.home.projectedScore = matchup.home.totalPoints
+                }
+            }
             thisMatchup.winner = matchup.winner
             if (matchup.playoffTierType) thisMatchup.playoffTierType = matchup.playoffTierType
 
-            matchups.add(thisMatchup)
+            scoreboard.add(thisMatchup)
         }
-        state.matchups = matchups
+        state.scoreboard = scoreboard
     }
-    else logDebug("Warning: No MatchupScore Data Retrieved")
+    else logDebug("Warning: No liveScoring data and/or scoreboard data Retrieved")
+
+    def selectedTeamIDs = followedTeams.collect {it as Integer}
+    def anySelectedTeamInPlay = selectedTeamIDs.any { teamsInPlay.contains( it ) }
+    logDebug("selectedTeamIDs = " + selectedTeamIDs + " teamsInPlay = " + teamsInPlay + " anySelectedTeamInPlay = " + anySelectedTeamInPlay)
+    if (anySelectedTeamInPlay) {
+        runIn(updateFrequencyInGame * 60, update, [overwrite: false])
+    }
+
+    updateDevices()
 }
 
 def getDayOfWeek(Date date) {
@@ -402,7 +453,7 @@ def getDayOfWeek(Date date) {
     return dayOfWeek
 }
 
-def advanceMatchupDisplayed() {
+def advanceWeek() {
     def leagueData = fetchLeague()
     if (leagueData) {
         state.scoringPeriod = leagueData.scoringPeriodId as Integer
@@ -412,9 +463,12 @@ def advanceMatchupDisplayed() {
         state.currentMatchupPeriod = leagueData.status?.currentMatchupPeriod
     }
     state.matchupPeriodToDisplay = state.currentMatchupPeriod  
+
+    scheduleUpdateAtGametimes()
 }
 
 def getLineup(rosterEntries) {
+    def proGames = fetchGames()
     def lineup = []
     rosterEntries.each { player ->
         def thisPlayer = [:]
@@ -424,6 +478,7 @@ def getLineup(rosterEntries) {
         thisPlayer.firstName = player.playerPoolEntry?.player.firstName
         thisPlayer.lastName = player.playerPoolEntry?.player.lastName
         thisPlayer.proTeamId = player.playerPoolEntry.player.proTeamId
+        thisPlayer.game = getPlayerGameData(proGames.events, thisPlayer.proTeamId)
         def stats = player.playerPoolEntry?.player?.stats
         for (stat in stats) {
             if (stat.statSplitTypeId == 1) {
@@ -436,6 +491,46 @@ def getLineup(rosterEntries) {
     return lineup
 }
 
+def getPlayerGameData(proGames, proTeamId) {
+    def game = [:]
+    for (proGame in proGames) {
+        def homeTeamId = null
+        def awayTeamId = null
+        for (competitor in proGame.competitors) {
+            if (competitor.homeAway == "home") homeTeamId = competitor.id
+            else if (competitor.homeAway == "away") awayTeamId = competitor.id
+        }
+        if ((homeTeamId as Integer) == proTeamId || (awayTeamId as Integer) == proTeamId)  {
+            game.date = proGame.date
+            game.status = proGame.status
+            game.summary = proGame.summary
+            game.homeTeamId = homeTeamId
+            game.awayTeamId = awayTeamId
+            game.homeScore = proGame.lastPlay?.homeScore
+            game.awayScore = proGame.lastPlay?.awayScore
+            game.clock = proGame.clock
+            game.period = proGame.period
+            game.percentComplete = proGame.percentComplete
+
+            if (game.status == "pre") game.minsLeft = MINS_PER_PRO_GAME
+            else if (game.status == "post") game.minsLeft = 0
+            else if (game.status == "in") {
+                def period = proGame.fullStatus.period as Integer
+                def secsLeft = (MINS_PER_PRO_GAME_PERIOD*60)*(4 - period) + proGame.fullStatus.clock
+                game.minsLeft = (secsLeft / 60).setScale(0, java.math.RoundingMode.DOWN)
+            }
+            return game
+        }
+    }
+}
+
+def getSecsFromClock(clock) {
+    def clockParts = clock.split(":")
+    def mins = clockParts[0] as Integer
+    def secs = clockParts[1] as Integer
+    return (mins*60) + secs
+}
+
 def getTeamNamesEnum() {
     def teamsData = fetchTeams()
     def teams = [:]
@@ -444,6 +539,7 @@ def getTeamNamesEnum() {
             teams[team.id] = team.name
         }
     }
+    state.teamInfo = teams
     return teams
 }
 
@@ -467,12 +563,12 @@ def setCurrentBoxScores() {
             boxScore.away = [:]
             boxScore.away.teamId = matchup.away.teamId
             boxScore.away.totalPoints = matchup.away.totalPoints
-            if (matchup.away.rosterForCurrentScoringPeriod) boxScore.away.roster = getLineup(matchup.away.rosterForCurrentScoringPeriod.entries)
+            if (matchup.away && matchup.away.rosterForCurrentScoringPeriod) boxScore.away.roster = getLineup(matchup.away.rosterForCurrentScoringPeriod.entries)
 
             boxScore.home = [:]
             boxScore.home.teamId = matchup.home.teamId
             boxScore.home.totalPoints = matchup.home.totalPoints
-            if (matchup.home.rosterForCurrentScoringPeriod) boxScore.home.roster = getLineup(matchup.home.rosterForCurrentScoringPeriod.entries)
+            if (matchup.home && matchup.home.rosterForCurrentScoringPeriod) boxScore.home.roster = getLineup(matchup.home.rosterForCurrentScoringPeriod.entries)
             
             boxScores.add(boxScore)
         }
@@ -480,25 +576,43 @@ def setCurrentBoxScores() {
     }
 }
 
-def getMatchupTile(tileNum) {  
+def getMatchupForTeam(teamId) {
+    for (matchup in state.scoreboard) {
+        if (matchup.matchupPeriod == state.matchupPeriodToDisplay) {
+            if ((matchup.home && matchup.home.teamId == teamId as Integer) || (matchup.away && matchup.away.teamId == teamId as Integer)) {
+                return matchup
+            }
+        }
+    }   
+    logDebug("No Matchup Found for Team " + teamId)
+}
+
+def getTeamMatchupTile(teamId) {  
     if (!state.refreshNum) state.refreshNum = 0
     state.refreshNum++
-    def matchupTileUrl = getMatchupTileEndpoint(tileNum) + '&version=' + state.refreshNum   
-        
+    def matchupTileUrl = getTeamMatchupTileEndpoint(teamId) + '&version=' + state.refreshNum   
     def matchupTile =     "<div style='height:100%;width:100%'><iframe src='${matchupTileUrl}' style='height:100%;width:100%;border:none'></iframe></div>"
     return matchupTile
 }
 
-def getMatchupForTile(tileNum) {
+def getLeagueMatchupTile(tileNum) {  
+    if (!state.refreshNum) state.refreshNum = 0
+    state.refreshNum++
+    def matchupTileUrl = getLeagueMatchupTileEndpoint(tileNum) + '&version=' + state.refreshNum   
+    def matchupTile =     "<div style='height:100%;width:100%'><iframe src='${matchupTileUrl}' style='height:100%;width:100%;border:none'></iframe></div>"
+    return matchupTile
+}
+
+def getLeagueMatchupForTile(tileNum) {
     def tileCount = 0
-    def selectedTeamIDs = matchupTileTeams.collect {it as Integer}
-    for (matchup in state.matchups) {
+    def selectedTeamIDs = followedTeams.collect {it as Integer}
+    for (matchup in state.scoreboard) {
         if (matchup.matchupPeriod == state.matchupPeriodToDisplay) {
-            if ((matchup.home.teamId) in selectedTeamIDs && (matchup.away.teamId) in selectedTeamIDs) {
+            if (matchup && (matchup.home.teamId as Integer) in selectedTeamIDs && matchup.away && (matchup.away.teamId as Integer) in selectedTeamIDs) {
                 tileCount++
                 if (tileCount == tileNum) return matchup
             }
-            else if ((matchup.home.teamId) in selectedTeamIDs || (matchup.away.teamId) in selectedTeamIDs) {
+            else if ((matchup.home && (matchup.home.teamId as Integer) in selectedTeamIDs) || (matchup.away && (matchup.away.teamId as Integer) in selectedTeamIDs)) {
                 tileCount++
                 if (tileCount == tileNum) return matchup
             }
@@ -506,43 +620,63 @@ def getMatchupForTile(tileNum) {
     }
 }
 
-def fetchMatchupTile() {
-    logDebug("Fetching Matchup Tile")
+def fetchLeagueMatchupTile() {
     if(params.appId.toInteger() != app.id) {
         logDebug("Returning null since app ID received at endpoint is ${params.appId.toInteger()} whereas the app ID of this app is ${app.id}")
         return null    // request was not for this app/team, so return null
     }
     def tileNum = params.tileNum.toInteger()
+    def matchup = getLeagueMatchupForTile(tileNum)
+    def matchupTile = getTileForMatchup(matchup)
+    render contentType: "text/html", data: matchupTile, status: 200
+}
+
+def fetchTeamMatchupTile() {
+    if(params.appId.toInteger() != app.id) {
+        logDebug("Returning null since app ID received at endpoint is ${params.appId.toInteger()} whereas the app ID of this app is ${app.id}")
+        return null    // request was not for this app/team, so return null
+    }
+    def teamId = params.teamId
+    def matchup = getMatchupForTeam(teamId)
+    def matchupTile = getTileForMatchup(matchup)
+    render contentType: "text/html", data: matchupTile, status: 200
+}
+
+def getTileForMatchup(matchup) {
     def defaultTextColor = getTextColorSetting()
     def defaultFontSize = getFontSizeSetting("teamInfo")
-
-    def matchup = getMatchupForTile(tileNum)
     def matchupTile = "<div style='height:100%;'>"
     if (matchup != null) {
-        def awayTeamId = matchup.away.teamId
-        def homeTeamId = matchup.home.teamId
+        def awayTeamId = matchup.away ? matchup.away.teamId : null
+        def homeTeamId = matchup.home ? matchup.home.teamId : null
         def isGameFinished = matchup.winner == "UNDECIDED" ? false : true
-        def homeTeamInjuryDisplay = (state.teams[homeTeamId]?.startingInjuredPlayer) ? "<img src='" + injuryIcon + "' width='30%' style='position:absolute; right: 0; vertical-align: top'>" : ""
-        def awayTeamInjuryDisplay = (state.teams[awayTeamId]?.startingInjuredPlayer) ? "<img src='" + injuryIcon + "' width='30%' style='position:absolute; left: 0; vertical-align: top'>" : ""
+        def homeTeamInjuryDisplay = (homeTeamId != null && state.teams[homeTeamId]?.startingInjuredPlayer) ? "<img src='" + injuryIcon + "' width='30%' style='position:absolute; right: 0; vertical-align: top'>" : ""
+        def awayTeamInjuryDisplay = (awayTeamId != null && state.teams[awayTeamId]?.startingInjuredPlayer) ? "<img src='" + injuryIcon + "' width='30%' style='position:absolute; left: 0; vertical-align: top'>" : ""
+        def homeTeamInPlayDisplay = (matchup.home && matchup.home.numCurrentlyPlaying > 0) ? "<img src='" + inPlayIcon + "' width='30%' style='position:absolute; left: 0; vertical-align: top'>" : ""
+        def awayTeamInPlayDisplay = (matchup.away && matchup.away.numCurrentlyPlaying > 0) ? "<img src='" + inPlayIcon + "' width='30%' style='position:absolute; right: 0; vertical-align: top'>" : ""
+        
+        def byeIcon = iconColor == "black" ? byeWeekIcon : byeWeekIconLight
+        def homeTeamLogo = homeTeamId != null ? state.teams[homeTeamId]?.logo : byeIcon
+        def awayTeamLogo = awayTeamId != null ? state.teams[awayTeamId]?.logo : byeIcon
 
         matchupTile += "<table width='100%' style='border-collapse: collapse;font-size:${defaultFontSize}%;color:${defaultTextColor};font-family: 'Oswald, sans-serif'>"
         matchupTile += "<tr>"
-        matchupTile += "<td width='40%' align=center style='vertical-align: top'><div style='position:relative;display:inline'><img src='" + state.teams[awayTeamId]?.logo + "' width='80%' style='vertical-align: bottom'>" + awayTeamInjuryDisplay + "</div></td>"
+        matchupTile += "<td width='40%' align=center style='vertical-align: top'><div style='position:relative;display:inline'><img src='" + awayTeamLogo + "' width='80%' style='vertical-align: bottom'>" + awayTeamInjuryDisplay + awayTeamInPlayDisplay + "</div></td>"
         matchupTile += "<td width='10%' align=center>at</td>"
-        matchupTile += "<td width='40%' align=center style='vertical-align: top'><div style='position:relative;display:inline'><img src='" + state.teams[homeTeamId]?.logo + "' width='80%' style='vertical-align: bottom'>" + homeTeamInjuryDisplay + "</div></td>"
+        matchupTile += "<td width='40%' align=center style='vertical-align: top'><div style='position:relative;display:inline'><img src='" + homeTeamLogo + "' width='80%' style='vertical-align: bottom'>" + homeTeamInjuryDisplay + homeTeamInPlayDisplay + "</div></td>"
         matchupTile += "</tr>"
         if (showTeamName || showTeamRecord) {
 
             def textColor = getTextColorSetting()
             def fontSize = getFontSizeSetting("teamInfo")
 
-            def awayName = (showTeamName ? state.teams[awayTeamId]?.name : "")
+            def awayName = (showTeamName && awayTeamId != null ? state.teams[awayTeamId]?.name : "")
             def awayRecord = ""
-            if (isGameFinished && showTeamRecord) awayRecord = (showTeamName ? " " : "") + '(' + state.teams[awayTeamId]?.record?.wins + '-' + state.teams[awayTeamId]?.record?.losses + (state.teams[awayTeamId]?.record?.ties ?: "") + ')'
+            if (isGameFinished && showTeamRecord && awayTeamId != null) awayRecord = (showTeamName ? " " : "") + '(' + state.teams[awayTeamId]?.record?.wins + '-' + state.teams[awayTeamId]?.record?.losses + (state.teams[awayTeamId]?.record?.ties ?: "") + ')'
 
-            def homeName = (showTeamName ? state.teams[homeTeamId]?.name : "")
+            def homeName = (showTeamName && homeTeamId != null ? state.teams[homeTeamId]?.name : "")
             def homeRecord = ""
-            if (isGameFinished && showTeamRecord) homeRecord = (showTeamName ? " " : "") + '(' + state.teams[homeTeamId]?.record?.wins + '-' + state.teams[homeTeamId]?.record?.losses + (state.teams[homeTeamId]?.record?.ties ?: "") + ')'
+            if (isGameFinished && showTeamRecord && homeTeamId != null) homeRecord = (showTeamName ? " " : "") + '(' + state.teams[homeTeamId]?.record?.wins + '-' + state.teams[homeTeamId]?.record?.losses + (state.teams[homeTeamId]?.record?.ties ?: "") + ')'
 
             matchupTile += "<tr style='padding-bottom: 0em;font-size:${fontSize}%;color:${textColor};font-weight: bold;'>"
             matchupTile += "<td width='40%' style='vertical-align: top;' align=center>" + awayName + awayRecord + "</td>" 
@@ -555,10 +689,12 @@ def fetchMatchupTile() {
             def textColor = getTextColorSetting()
             def fontSize = getFontSizeSetting("teamInfo")
 
-            def awayOwner = state.teams[awayTeamId]?.primaryOwner
-            def homeOwner = state.teams[homeTeamId]?.primaryOwner
-            def awayOwnerName = (showTeamOwnerFirstName ? awayOwner.firstName : "") + (showTeamOwnerFirstName && showTeamOwnerLastName ? " " : "") + (showTeamOwnerLastName ? awayOwner.lastName : "")
-            def homeOwnerName = (showTeamOwnerFirstName ? homeOwner.firstName : "") + (showTeamOwnerFirstName && showTeamOwnerLastName ? " " : "") + (showTeamOwnerLastName ? homeOwner.lastName : "")
+            def awayOwner = awayTeamId != null ? state.teams[awayTeamId]?.primaryOwner : null
+            def homeOwner = homeTeamId != null ? state.teams[homeTeamId]?.primaryOwner : null
+            def awayOwnerName = ""
+            if (awayOwner) awayOwnerName = (showTeamOwnerFirstName ? awayOwner.firstName : "") + (showTeamOwnerFirstName && showTeamOwnerLastName ? " " : "") + (showTeamOwnerLastName ? awayOwner.lastName : "")
+            def homeOwnerName = ""
+            if (homeOwner) homeOwnerName = (showTeamOwnerFirstName ? homeOwner.firstName : "") + (showTeamOwnerFirstName && showTeamOwnerLastName ? " " : "") + (showTeamOwnerLastName ? homeOwner.lastName : "")
             matchupTile += "<tr style='padding-bottom: 0em; font-size:${fontSize}%; color:${textColor};font-weight: bold;'>"
             matchupTile += "<td width='40%' style='vertical-align: top;' align=center>" + awayOwnerName + "</td>" 
             matchupTile += "<td width='10%' align=center></td>"
@@ -573,16 +709,22 @@ def fetchMatchupTile() {
         def homeProjectedScore = null
         
         if (!isGameFinished) {
-            if (matchup.away.totalPointsLive != null || matchup.home.totalPointsLive != null) {
-                awayScore = matchup.away.totalPointsLive ?: 0
-                homeScore = matchup.home.totalPointsLive ?: 0
+            if ((matchup.away && matchup.away.totalPointsLive != null) || (matchup.home && matchup.home.totalPointsLive != null)) {
+                awayScore = (matchup.away && matchup.away.totalPointsLive) ? matchup.away.totalPointsLive : 0
+                homeScore = (matchup.home && matchup.home.totalPointsLive) ? matchup.home.totalPointsLive : 0
             }
-            awayProjectedScore = matchup.away.projectedScore
-            homeProjectedScore = matchup.home.projectedScore
+            if ((matchup.home && matchup.home.totalProjectedPointsLive != null) || (matchup.away && matchup.away.totalProjectedPointsLive)) {
+                awayProjectedScore = (matchup.away && matchup.away.totalProjectedPointsLive) ? matchup.away.totalProjectedPointsLive : 0
+                homeProjectedScore = (matchup.home && matchup.home.totalProjectedPointsLive) ? matchup.home.totalProjectedPointsLive : 0
+            }
+            else {
+                awayProjectedScore = matchup.away ? matchup.away.projectedScore : 0
+                homeProjectedScore = matchup.home ? matchup.home.projectedScore : 0
+            }
         }
         else {
-            awayScore = matchup.away.totalPoints
-            homeScore = matchup.home.totalPoints
+            awayScore = matchup.away ? matchup.away.totalPoints : 0
+            homeScore = matchup.home ? matchup.home.totalPoints : 0
             if (matchup.winner == "HOME") {
                 homeScoreColor = "#059936" // green
                 awayScoreColor = "#C33414" // red
@@ -611,10 +753,20 @@ def fetchMatchupTile() {
             matchupTile += "<td width='40%' align=center>" + "<img src='" + icon + "' width='25%' style='vertical-align: center'> " + formatDecimal(homeProjectedScore) + "</td>"
             matchupTile += "</tr>"                    
         }
+        if (showMinsLeft) {
+            def textColor = getTextColorSetting()
+            def fontSize = getFontSizeSetting("teamInfo")
+            def icon = iconColor == "black" ? minsLeftIcon : minsLeftIconLight
+            matchupTile += "<tr style='padding-bottom: 0em;font-size:${fontSize}%;color:${textColor};font-weight: bold;'>"
+            matchupTile += "<td width='40%' align=center>" + "<img src='" + icon + "' width='25%' align=center style='vertical-align: center'> " + (matchup.away ? matchup.away.minsLeft : 0) + "</td>"
+            matchupTile += "<td width='10%' align=center></td>"
+            matchupTile += "<td width='40%' align=center>" + "<img src='" + icon + "' width='25%' align=center style='vertical-align: center'> " + (matchup.home ? matchup.home.minsLeft : 0) + "</td>"
+            matchupTile += "</tr>"   
+        }
         matchupTile += "</table>" 
     }
     matchupTile += "</div>" 
-    render contentType: "text/html", data: matchupTile, status: 200
+    return matchupTile
 }
 
 def titleCase(str) {
@@ -643,40 +795,32 @@ def fetchMatchupScores(forTeamId = null, forScoringPeriodId = null, forMatchupPe
     return matchupScores
 }
 
+def fetchLiveScoring() {
+    def result = sendApiRequest(["mLiveScoring"])
+    return result
+}
+
+def fetchScoreboard() {
+    def result = sendApiRequest(["mScoreboard"])
+    return result
+}
+
 def fetchRoster(forTeamId = null) {
     def result = sendApiRequest(["mRoster"], forTeamId)
     return result
 }
 
 def fetchLeague() {
-    def result = sendApiRequest(["mTeam", "mRoster", "mMatchup", "mStandings", "mSettings"])
+    def result = sendApiRequest(["mTeam", "mRoster", "mMatchup", "mStandings", "mSettings", "mLiveScoring"])
     return result
 }
 
 def fetchProSchedules() {
-    def params = [
-        uri: "https://lm-api-reads.fantasy.espn.com/apis/v3/games/ffl/seasons/2024?view=proTeamSchedules_wl",
-        path: "",
-		contentType: "application/json",
-		timeout: 1000
-	]
+    return sendPublicApiRequest("https://lm-api-reads.fantasy.espn.com/apis/v3/games/ffl/seasons/2024?view=proTeamSchedules_wl")
+}
 
-    if (body != null)
-        params.body = body
-
-    def result = null
-    try
-    {
-        httpGet(params) { resp ->
-            result = resp.data
-        }                
-    }
-    catch (Exception e)
-    {
-        log.warn "fetchProSchedules() failed: ${e.message}"
-        return null
-    }   
-    return result
+def fetchGames() {
+    return sendPublicApiRequest("https://site.api.espn.com/", "apis/fantasy/v2/games/ffl/games")
 }
 
 /*
@@ -694,15 +838,24 @@ def fetchProPlayers() {
 
 
 
-def createChild()
+def createDevices()
 {
-    def name = state.leagueName ?: ("FFL" + app.id)
-    parent.createChildDevice(app.id, name)
+    def leagueDeviceData = [id: leagueId, name: (state.leagueName ?: ("FFL" + leagueId))]
+
+    def teamDevicesData = []
+    def selectedTeamIDs = followedTeams.collect {it as Integer}
+    for (teamId in selectedTeamIDs) {
+        def teamName = (state.teams != null) ? state.teams[teamId]?.name : state.teamInfo[teamId]
+        def device = [id: teamId, name: teamName, leagueId: getLeagueId()]
+        teamDevicesData.add(device)
+    }
+    
+    parent.createDevices(leagueDeviceData, teamDevicesData)
 }
 
-def deleteChild()
+def deleteDevices()
 {
-    parent.deleteChildDevice(app.id)
+    parent.deleteDevicesForLeague(leagueId)
 }
 
 def getFFLYearStart() {
@@ -725,19 +878,29 @@ def getLeagueId() {
 }
 
 
-def updateDevice() {
+def updateDevices() {
+    def leagueDeviceData = [:]
+    leagueDeviceData.id = getLeagueId()
+    leagueDeviceData.name = state.leagueName ?: ("FFL" + getLeagueId())
+    leagueDeviceData.tile1 = getLeagueMatchupTile(1)
+    leagueDeviceData.tile2 = getLeagueMatchupTile(2)
+    leagueDeviceData.tile3 = getLeagueMatchupTile(3)
+    leagueDeviceData.tile4 = getLeagueMatchupTile(4)
+    leagueDeviceData.tile5 = getLeagueMatchupTile(5)
+    leagueDeviceData.tile6 = getLeagueMatchupTile(6)
 
-  //  def switchValue = getSwitchValue()  
-    def matchupTile1 = getMatchupTile(1)
-    def matchupTile2 = getMatchupTile(2)
-    def matchupTile3 = getMatchupTile(3)
-    def matchupTile4 = getMatchupTile(4)
-    def matchupTile5 = getMatchupTile(5)
-    def matchupTile6 = getMatchupTile(6)
-
-    def data = [tile1: matchupTile1, tile2: matchupTile2, tile3: matchupTile3, tile4: matchupTile4, tile5: matchupTile5, tile6: matchupTile6]
-
-    parent.updateChildDevice(app.id, data)
+    def teamDevicesData = [:]
+    def selectedTeamIDs = followedTeams.collect {it as Integer}
+    for (teamId in selectedTeamIDs) {
+        teamDevicesData[teamId] = [:]
+        teamDevicesData[teamId].id = teamId
+        teamDevicesData[teamId].leagueId = getLeagueId()
+        teamDevicesData[teamId].team = state.teams[teamId]
+        teamDevicesData[teamId].tile = getTeamMatchupTile(teamId)
+        teamDevicesData[teamId].matchup = getMatchupForTeam(teamId)
+    }
+    
+    parent.updateDevicesForLeague(leagueDeviceData, teamDevicesData)
 }
 
 def pushDeviceButton(buttonNum) {
@@ -783,6 +946,32 @@ def sendApiRequest(viewList = null, teamId = null, scoringPeriodId = null, match
     return result
 }
 
+def sendPublicApiRequest(uri, path = "") {
+    def params = [
+        uri: uri,
+        path: path,
+		contentType: "application/json",
+		timeout: 1000
+	]
+
+    if (body != null)
+        params.body = body
+
+    def result = null
+    try
+    {
+        httpGet(params) { resp ->
+            result = resp.data
+        }                
+    }
+    catch (Exception e)
+    {
+        log.warn "sendPublicApiRequest() for ${uri}${path} failed: ${e.message}"
+        return null
+    }   
+    return result
+}
+
 def getSecondsBetweenDates(Date startDate, Date endDate) {
     try {
         def difference = endDate.getTime() - startDate.getTime()
@@ -793,11 +982,11 @@ def getSecondsBetweenDates(Date startDate, Date endDate) {
     }
 }
 
-def adjustDateBySecs(Date date, Integer secs) {
+def adjustDateByMins(Date date, Integer mins) {
     Calendar cal = Calendar.getInstance()
     cal.setTimeZone(location.timeZone)
     cal.setTime(date)
-    cal.add(Calendar.SECOND, secs)
+    cal.add(Calendar.MINUTE, mins)
     Date newDate = cal.getTime()
     return newDate
 }

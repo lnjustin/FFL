@@ -16,6 +16,7 @@
  *  v1.0.0 - initial alpha release
  *  v1.0.1 - update bug fix
  *  v1.0.2 - ingame update bug fix
+ *  v1.1.0 - Added league/team child devices, in-play stats
  */
 import java.text.SimpleDateFormat
 import groovy.transform.Field
@@ -113,7 +114,7 @@ def updated() {
 }
 
 def uninstalled() {
-    deleteDevices()
+    deleteAllDevices()
 	logDebug "Uninstalled app"
 }
 
@@ -148,6 +149,12 @@ def installCheck(){
   	}
 }
 
+def getParentDevice() {
+    def parent = getChildDevice("fflParentDevice${app.id}")
+    if (!parent) parent = createParentDevice()
+    return parent
+}
+
 def createParentDevice()
 {
     def parent = getChildDevice("fflParentDevice${app.id}")
@@ -160,15 +167,22 @@ def createParentDevice()
         }
         else log.error "Error Creating FFL Parent Device"
     }
+    return parent
 }
 
-def deleteDevices() 
+def deleteAllDevices() 
 {
-    deleteChildrenDevices()
+    def parent = getParentDevice()
+    parent?.deleteAllDevices()
     deleteChildDevice("fflParentDevice${app.id}")
 }
 
-def deleteChildrenDevices() 
+def deleteDevicesForLeague(leagueId) {
+    def parent = getParentDevice()
+    parent?.deleteDevicesForLeague(leagueId)
+}
+
+def deleteChildrenDevicess()
 {
     def parent = getChildDevice("fflParentDevice${app.id}")
     if (parent) {
@@ -177,7 +191,7 @@ def deleteChildrenDevices()
     else log.error "No Parent Device Found. No child devices deleted."    
 }
 
-def deleteChildDevice(appID) {
+def deleteChildDevice(appID = null) {
     def parent = getChildDevice("fflParentDevice${app.id}")
     if (parent) {
         parent.deleteChild(appID)
@@ -185,12 +199,10 @@ def deleteChildDevice(appID) {
     else log.error "No Parent Device Found."
 }
 
-def createChildDevice(appID, name) {
-    def parent = getChildDevice("fflParentDevice${app.id}")
-    if (parent) {
-        parent.createChild(appID, name)
-    }
-    else log.error "No Parent Device Found with ID=" + "fflParentDevice${app.id}" + " When Attempting to Create Child Device."
+def createDevices(leagueDeviceData, teamDevicesData) {
+
+    def parent = getParentDevice()
+    parent.createDevices(leagueDeviceData, teamDevicesData)
 }
 
 def setTileTextColor(appId, color) {
@@ -211,12 +223,12 @@ def setTileIconColor(appId, color) {
     }
 }
 
-def updateChildDevice(appID, data) {
-    def parent = getChildDevice("fflParentDevice${app.id}")
+def updateDevicesForLeague(leagueDeviceData, teamDevicesData) {
+    def parent = getParentDevice()
     if (parent) {
-        parent.updateChildDevice(appID, data)
+        parent.updateDevicesForLeague(leagueDeviceData, teamDevicesData)
     }
-    else log.error "No Parent Device Found with ID=I" + "fflParentDevice${app.id}" + " When Attempting to Update Child Device. "
+    else log.error "No Parent Device Found with ID=I" + "fflParentDevice${app.id}" + " When Attempting to Update Devices for League. "    
 }
 
 def pushDeviceButton(appID, buttonNum) {

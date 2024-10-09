@@ -24,10 +24,6 @@ metadata
         
         attribute "tile", "string" 
         
-        attribute "status", "string"                    
-        attribute "opponent", "string"  
-        attribute "homeOrAway", "string"
-        
         command(
              "setTileTextColor", 
              [
@@ -104,95 +100,6 @@ def pushChildDeviceButton(appID, buttonNum) {
     else log.error "No Child Device for app ${appID} found"    
 }
 
-def anyHighPriorityGameNear(lowPriorityChild, children) {
-    def anyNear = false
-    def thresholdInSecs = lowPriorityChild.getThreshold() * 3600
-    for (child in children) {
-        if (child != lowPriorityChild && !child.isLowPriority()) {
-            def childGameTime = child.currentValue("gameTime")
-            def lowPriorityGameTime = lowPriorityChild.currentValue("gameTime")
-            if (childGameTime != "No Game Data" && childGameTime != "No Game Scheduled" && lowPriorityGameTime != "No Game Data" && lowPriorityGameTime != "No Game Scheduled") {
-                Date lowPriorityGameTimeDate = new Date(Long.valueOf(lowPriorityGameTime))
-                Date childGameTimeDate = new Date(Long.valueOf(childGameTime))   
-                def secsDiff = getSecondsBetweenDates(lowPriorityGameTimeDate, childGameTimeDate)
-                if (secsDiff == 0) anyNear = true
-                else if (secsDiff > 0 && secsDiff < thresholdInSecs) anyNear = true
-                else if (secsDiff < 0 && secsDiff > -1*thresholdInSecs) anyNear = true
-            }
-        }
-    }
-    return anyNear
-}
-
-def updateParentDevice() {
-    def nextGameChild = null
-    def lastGameChild = null
-    Date now = new Date()
-    def children = getChildDevices()
-    def filteredChildren = []
-    for(child in children)
-    {
-        if (child.isLowPriority() && !anyHighPriorityGameNear(child, children)) filteredChildren.add(child)  // only add if no high priority game near in time to this low priority child
-        else if (!child.isLowPriority()) filteredChildren.add(child)
-    }
-    for(child in filteredChildren)
-    {    
-        def childGameTime = child.currentValue("gameTime")
-        if (childGameTime != null && childGameTime != "No Game Scheduled" && childGameTime != "No Game Data") {
-            def gameTimeObj = new Date(Long.valueOf(childGameTime))
-            def childStatus = child.currentValue("status")
-            if (gameTimeObj.after(now) || gameTimeObj.equals(now)  || childStatus == "Scheduled" || childStatus == "InProgress"  || childStatus == "Delayed") {         
-                if (nextGameChild == null) {
-                    nextGameChild = child
-                }
-                else {                
-                    def nextGameTimeObj = new Date(Long.valueOf(nextGameChild.currentValue("gameTime")))                
-                    def nextGameChildStatus = nextGameChild.currentValue("status")
-                    if (childStatus == "InProgress") {
-                        if (nextGameChildStatus != "InProgress") nextGameChild = child
-                         else if (nextGameChildStatus == "InProgress" && nextGameTimeObj.after(gameTimeObj)) nextGameChild = child    // display whichever game started earlier
-                     }
-                     else {
-                         if (nextGameChildStatus != "InProgress" && getSecondsBetweenDates(now, gameTimeObj) < getSecondsBetweenDates(now, nextGameTimeObj)) {
-                               nextGameChild = child
-                         }    
-                     }
-                }
-            }
-            else {
-                // handle finished game
-                if (lastGameChild == null) lastGameChild = child
-                else {
-                     def lastChildGameTime = new Date(Long.valueOf(lastGameChild.currentValue("gameTime"))) 
-                     if (getSecondsBetweenDates(gameTimeObj, now) < getSecondsBetweenDates(lastChildGameTime, now)) {
-                          lastGameChild = child
-                     }
-                }            
-            }
-        }
-    }
-    
-    def childToDisplay = null
-    if (lastGameChild == null && nextGameChild != null) childToDisplay = nextGameChild
-    else if (nextGameChild == null && lastGameChild != null) childToDisplay = lastGameChild
-    else if (lastGameChild != null && nextGameChild != null) {
-        def lastChildGameTime = new Date(Long.valueOf(lastGameChild.currentValue("gameTime"))) 
-        def nextChildGameTime = new Date(Long.valueOf(nextGameChild.currentValue("gameTime")))  
-        
-        def switchTime = Math.round(getSecondsBetweenDates(lastChildGameTime, nextChildGameTime) / 120) as Integer // switch halfway between
-        Calendar cal = Calendar.getInstance()
-        cal.setTimeZone(location.timeZone)
-        cal.setTime(lastChildGameTime)
-        cal.add(Calendar.MINUTE, switchTime)
-        def switchDate = cal.time
-        if (nextGameChild.currentValue("status") == "InProgress" || nextGameChild.currentValue("status") == "Delayed") childToDisplay = nextGameChild
-        else if (now.after(switchDate) || now.equals(switchDate)) childToDisplay = nextGameChild
-        else childToDisplay = lastGameChild
-    }
-    if (childToDisplay) copyChild(childToDisplay)
-    else clearParent()
-}
-
 def getSecondsBetweenDates(Date startDate, Date endDate) {
     try {
         def difference = endDate.getTime() - startDate.getTime()
@@ -203,49 +110,59 @@ def getSecondsBetweenDates(Date startDate, Date endDate) {
     }
 }
 
-def clearParent() {
-    sendEvent(name: "gameTime", value: "No Game Scheduled")
-    sendEvent(name: "gameTimeStr", value: "No Game Scheduled")
-    sendEvent(name: "tile", value: "<div style='overflow:auto;height:90%'></div>")
-    sendEvent(name: "schedule", value: "<div style='overflow:auto;height:90%'></div>")
-    sendEvent(name: "status", value: "No Game Scheduled")
-    sendEvent(name: "opponent", value: "No Game Scheduled")
-    sendEvent(name: "homeOrAway", value: "No Game Scheduled")
-    sendEvent(name: "switch", value: "off")    
+def updateDevicesForLeague(leagueDeviceData, teamDevicesData) {
+    def leagueDevice = getLeagueDevice(leagueDeviceData)
+    if (leagueDevice) {
+        leagueDevice.updateDevicesForLeague(leagueDeviceData, teamDevicesData)
+    }
+    else log.error "Error Updating FFL League Device"    
 }
 
-def copyChild(child) {
-    sendEvent(name: "gameTime", value: child.currentValue("gameTime"))
-    sendEvent(name: "gameTimeStr", value: child.currentValue("gameTimeStr"))
-    sendEvent(name: "tile", value: child.currentValue("tile"))
-    sendEvent(name: "schedule", value: child.currentValue("schedule"))
-    sendEvent(name: "status", value: child.currentValue("status"))
-    sendEvent(name: "opponent", value: child.currentValue("opponent"))
-    sendEvent(name: "homeOrAway", value: child.currentValue("homeOrAway"))
-    sendEvent(name: "switch", value: child.currentValue("switch"))    
+def createDevices(leagueDeviceData, teamDevicesData) {
+    def leagueDevice = getLeagueDevice(leagueDeviceData)
+    if (leagueDevice) {
+        leagueDevice.createTeamDevices(leagueDeviceData, teamDevicesData)
+    }
+    else log.error "Error Creating FFL League Devices"
 }
 
-def updateChildDevice(appID, data)
+def getLeagueDevice(leagueDeviceData) {
+    def leagueDevice = getChildDevice("fflLeagueDevice" + leagueDeviceData.id)
+    if (!leagueDevice) leagueDevice = createLeagueDevice(leagueDeviceData)
+    return leagueDevice
+}
+
+def createLeagueDevice(leagueDeviceData)
 {
-    def child = getChildDevice("fflChildDevice${appID}")
-    if (child) {
-        child.updateDevice(appID, data)
-      //  runIn(5, "updateParentDevice")
+    String networkID = "fflLeagueDevice" + leagueDeviceData.id
+    def leagueDevice = getChildDevice(networkID)
+    if (!leagueDevice) {
+        leagueDevice = addChildDevice("lnjustin", "FFL League", networkID, [label:leagueDeviceData.name, isComponent:true, name: leagueDeviceData.name])
+        if (leagueDevice) {
+            leagueDevice.updateSetting("parentID", device.id)
+        }
+        else log.error "Error Creating FFL League Device"
     }
-    else log.error "No Child Device for app ${appID} found"
+    if (leagueDevice) {
+        leagueDevice.setLabel(leagueDeviceData.name)
+    }
+    return leagueDevice
 }
 
-def createChild(appID, name)
-{
-    def child = getChildDevice("fflChildDevice${appID}")    
-    if (!child) {
-        String childNetworkID = "fflChildDevice${appID}"
-        def newChild = addChildDevice("lnjustin", "FFL Child", childNetworkID, [label:name, isComponent:true, name:name])
-    }
-    else {
-        child.setLabel(name)
-        child.setName(name)
-    }
+def deleteDevicesForLeague(leagueId) {
+    def leagueDevice = getChildDevice("fflLeagueDevice" + leagueId)
+    if (leagueDevice) {
+        leagueDevice.deleteAllTeamDevices()
+        deleteChildDevice("fflLeagueDevice" + leagueId)
+    }  
+}
+
+def deleteAllDevices() {
+    for(leagueDevice in getChildDevices())
+    {
+        leagueDevice.deleteAllTeamDevices()
+        deleteChildDevice(leagueDevice.deviceNetworkId)
+    }    
 }
 
 def deleteChild(appID)

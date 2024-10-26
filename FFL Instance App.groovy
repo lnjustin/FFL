@@ -58,6 +58,7 @@ mappings
 {
     path("/ffl/leagueMatchupTile/:appId/:tileNum") { action: [ GET: "fetchLeagueMatchupTile"] }
     path("/ffl/teamMatchupTile/:appId/:teamId") { action: [ GET: "fetchTeamMatchupTile"] }
+    path("/ffl/teamRosterTile/:appId/:teamId") { action: [ GET: "fetchTeamRosterTile"] }
 }
 
 def getLeagueMatchupTileEndpoint(tileNum) {
@@ -66,6 +67,10 @@ def getLeagueMatchupTileEndpoint(tileNum) {
 
 def getTeamMatchupTileEndpoint(teamId) {
     return getFullApiServerUrl() + "/ffl/teamMatchupTile/${app.id}/${teamId}?access_token=${state.accessToken}"    
+}
+
+def getTeamRosterTileEndpoint(teamId) {
+    return getFullApiServerUrl() + "/ffl/teamRosterTile/${app.id}/${teamId}?access_token=${state.accessToken}"    
 }
 
 def getUpdateInterval() {
@@ -116,11 +121,17 @@ def mainPage() {
                     input("textColor", "text", title: "Matchup Tile Text Color (Hex format with leading #)", defaultValue: '#000000', displayDuringSetup: false, required: false, width: 6)
                     input("iconColor", "enum", title: "Matchup Tile Icon Color (Hex format with leading #)", defaultValue: 'black', options: ["black", "white"], displayDuringSetup: false, required: false, width: 6)
                 }
+                section (getInterface("header", " Roster Tile Setup")) {     
+                    input(name:"rosterFontSize", type: "number", title: "Roster Tile Font Size (%)", required:true, defaultValue:100, width: 6)
+                    input("rosterTextColor", "text", title: "Roster Tile Text Color (Hex format with leading #)", defaultValue: '#000000', displayDuringSetup: false, required: false, width: 6)
+                    input("rosterRowColor1", "text", title: "Roster Tile Row Color 1 (Hex format with leading #)", defaultValue: '#989898', displayDuringSetup: false, required: false, width: 6)
+                    input("rosterRowColor2", "text", title: "Roster Tile Row Color 2 (Hex format with leading #)", defaultValue: '#767676', displayDuringSetup: false, required: false, width: 6)
+                }
             }
             section (getInterface("header", " General Settings")) {                
                 label title: "FFL Instance Name", required:false, submitOnChange:true
                 input name: "updateFrequencyOutOfGame", title: "How Often to Update When No Game Is Ongoing (minutes)", type: "number", required: true, description: "30+ Minutes Recommended" 
-                input name: "updateFrequencyInGame", title: "How Often to Update When Game Is Ongoing For Teams Selected To Show On Tile (minutes)", type: "number", required: true, description: "5-10 Minutes Acceptable" 
+                input name: "updateFrequencyInGame", title: "How Often to Update When Game Is Ongoing For Teams Selected To Show On Matchup Tile (minutes)", type: "number", required: true, description: "5-10 Minutes Acceptable" 
                 input name: "decimalPlaces", title: "Decimal Places", type: "enum", required: true, options: [0 , 1, 2]
 			    input("debugOutput", "bool", title: "Enable debug logging?", defaultValue: true, displayDuringSetup: false, required: false)
                 input name: "disabled", title:"Manually Disable?", type:"bool", required:false, submitOnChange:false
@@ -150,8 +161,16 @@ def getTextColorSetting(type) {
     else if (type == "projectedScore") return (projectedScoreTextColor) ? projectedScoreTextColor : "#000000"
 }
 
+def getRosterTextColorSetting() {
+    return rosterTextColor ?: "#000000"
+}
+
 def getTextColorSetting() {
     return textColor ?: "#000000"
+}
+
+def getRosterFontSizeSetting() {
+    return rosterFontSize ?: 100
 }
 
 def getFontSizeSetting(type) {
@@ -257,6 +276,17 @@ def scheduleUpdateAtGametimes() {
     }
 }
 
+def getProTeamGame(proTeams, proTeamId, scoringPeriod) {
+    def team = proTeams.find { it.id == proTeamId }
+    if (team) {
+        if (team.byeWeek == scoringPeriod) return null
+        def games = team.proGamesByScoringPeriod
+        def game = games.find { it.scorePeriodId == scoringPeriod }
+        return game
+    }
+    else log.debug("No Game Data Found for proTeamId = " + proTeamId)
+}
+
 def update() {
     logDebug("Update()...")
     def leagueData = fetchLeague()
@@ -264,6 +294,7 @@ def update() {
         state.leagueName = leagueData.settings?.name
         state.teamCount = leagueData.size
         state.scoringType = leagueData.scoringSettings?.scoringType
+        state.lineupSlotCounts = leagueData.settings?.rosterSettings?.lineupSlotCounts
 
         state.scoringPeriod = leagueData.scoringPeriodId as Integer
         state.finalScoringPeriod = leagueData.status?.finalScoringPeriod as Integer
@@ -313,13 +344,16 @@ def update() {
                         def thisPlayer = [:]
                         thisPlayer.injuryStatus = player.injuryStatus
                         thisPlayer.lineupSlotId = player.lineupSlotId
-                        thisPlayer.position = POSITION_MAP[thisPlayer.lineupSlotId]
+                        thisPlayer.slot = SLOT_MAP[thisPlayer.lineupSlotId]
                         thisPlayer.lineupLocked = player.playerPoolEntry.lineupLocked
                         thisPlayer.rank = [ppr: player.playerPoolEntry.player.draftRanksByRankType.PPR.rank, standard: player.playerPoolEntry.player.draftRanksByRankType.STANDARD.rank]
                         thisPlayer.fullName = player.playerPoolEntry.player.fullName
                         thisPlayer.firstName = player.playerPoolEntry.player.firstName
                         thisPlayer.lastName = player.playerPoolEntry.player.lastName
                         thisPlayer.id = player.playerId
+                        thisPlayer.positionId = player.playerPoolEntry.player.defaultPositionId
+                        thisPlayer.position = POSITION_MAP[thisPlayer.positionId]
+                        thisPlayer.headshot = getPlayerHeadshotUrl(player.playerId)
                         thisPlayer.proTeamId = player.playerPoolEntry.player.proTeamId
                         thisPlayer.proTeamName = PRO_TEAM_MAP[thisPlayer.proTeamId]
                         thisPlayer.injured = player.playerPoolEntry?.player?.injured
@@ -333,7 +367,7 @@ def update() {
                         }
                         thisTeam.roster.add(thisPlayer)
 
-                         if (thisPlayer.position != 'BE' && thisPlayer.position != 'IR') {
+                         if (thisPlayer.slot != 'BE' && thisPlayer.slot != 'IR') {
                             if (thisPlayer.injuryStatus == "OUT") thisTeam.startingInjuredPlayer = true
                             if (thisPlayer.injuryStatus2 == "OUT") thisTeam.startingInjuredPlayer = true
                             if (thisPlayer.injured == true && thisPlayer.stats && thisPlayer.stats[state.scoringPeriod]?.projectedPoints == 0) thisTeam.startingInjuredPlayer = true
@@ -374,7 +408,7 @@ def update() {
                     thisMatchup.away.numCurrentlyPlaying = 0
                     thisMatchup.away.numYetToPlay = 0
                     for (player in thisMatchup.away.lineup) {
-                        if (player.position != 'BE' && player.position != 'IR') {
+                        if (player.slot != 'BE' && player.slot != 'IR') {
                             if (player.game?.minsLeft != null) thisMatchup.away.minsLeft += (player.game?.minsLeft as Integer)
                             if (player.game?.status == "in") thisMatchup.away.numCurrentlyPlaying += 1
                             else if (player.game?.status == "pre") thisMatchup.away.numYetToPlay += 1
@@ -384,7 +418,7 @@ def update() {
 
                     if (matchup.winner == "UNDECIDED") {
                         for (player in thisMatchup.away.lineup) {
-                            if (player.projectedPoints && player.position != 'BE' && player.position != 'IR') {
+                            if (player.projectedPoints && player.slot != 'BE' && player.slot != 'IR') {
                                 if (thisMatchup.away.projectedScore == null) thisMatchup.away.projectedScore = player.projectedPoints
                                 else thisMatchup.away.projectedScore += player.projectedPoints
                             }
@@ -408,7 +442,7 @@ def update() {
                     thisMatchup.home.numCurrentlyPlaying = 0
                     thisMatchup.home.numYetToPlay = 0
                     for (player in thisMatchup.home.lineup) {
-                        if (player.position != 'BE' && player.position != 'IR') {
+                        if (player.slot != 'BE' && player.slot != 'IR') {
                             if (player.game?.minsLeft != null) thisMatchup.home.minsLeft += (player.game?.minsLeft as Integer)
                             if (player.game?.status == "in") thisMatchup.home.numCurrentlyPlaying += 1
                             else if (player.game?.status == "pre") thisMatchup.home.numYetToPlay += 1
@@ -418,7 +452,7 @@ def update() {
 
                     if (matchup.winner == "UNDECIDED") {
                         for (player in thisMatchup.home.lineup) {
-                            if (player.projectedPoints && player.position != 'BE' && player.position != 'IR') {
+                            if (player.projectedPoints && player.slot != 'BE' && player.slot != 'IR') {
                                 if (thisMatchup.home.projectedScore == null) thisMatchup.home.projectedScore = formatDecimal(player.projectedPoints)
                                 else thisMatchup.home.projectedScore += player.projectedPoints
                             }
@@ -444,6 +478,10 @@ def update() {
     }
 
     updateDevices()
+}
+
+def getPlayerHeadshotUrl(playerId) {
+    return "https://a.espncdn.com/i/headshots/nfl/players/full/" + playerId + ".png"
 }
 
 def getDayOfWeek(Date date) {
@@ -473,18 +511,26 @@ def getLineup(rosterEntries) {
     def lineup = []
     rosterEntries.each { player ->
         def thisPlayer = [:]
+      //  logDebug("Player: " + player)
         thisPlayer.lineupSlotId = player.lineupSlotId
-        thisPlayer.position = POSITION_MAP[thisPlayer.lineupSlotId]
+        thisPlayer.slot = SLOT_MAP[thisPlayer.lineupSlotId]
         thisPlayer.playerId = player.playerId
         thisPlayer.firstName = player.playerPoolEntry?.player.firstName
         thisPlayer.lastName = player.playerPoolEntry?.player.lastName
+        thisPlayer.eligibleSlots = player.playerPoolEntry?.player.eligibleSlots
+        thisPlayer.positionId = player.playerPoolEntry.player.defaultPositionId
+        thisPlayer.position = POSITION_MAP[thisPlayer.positionId]
+        thisPlayer.injuryStatus = player.playerPoolEntry?.player?.injuryStatus
         thisPlayer.proTeamId = player.playerPoolEntry.player.proTeamId
         thisPlayer.game = getPlayerGameData(proGames.events, thisPlayer.proTeamId)
         def stats = player.playerPoolEntry?.player?.stats
         for (stat in stats) {
             if (stat.statSplitTypeId == 1) {
                 if (stat.statSourceId == 1) thisPlayer.projectedPoints = stat.appliedTotal
-                else if (stat.statSourceId == 0) thisPlayer.actualPoints = stat.appliedTotal
+                else if (stat.statSourceId == 0) {
+                    thisPlayer.actualPoints = stat.appliedTotal
+                    thisPlayer.stats = stat.stats
+                }
             }
         }    
         lineup.add(thisPlayer)
@@ -495,20 +541,18 @@ def getLineup(rosterEntries) {
 def getPlayerGameData(proGames, proTeamId) {
     def game = [:]
     for (proGame in proGames) {
-        def homeTeamId = null
-        def awayTeamId = null
+        def home = null
+        def away = null
         for (competitor in proGame.competitors) {
-            if (competitor.homeAway == "home") homeTeamId = competitor.id
-            else if (competitor.homeAway == "away") awayTeamId = competitor.id
+            if (competitor.homeAway == "home") home = competitor
+            else if (competitor.homeAway == "away") away = competitor
         }
-        if ((homeTeamId as Integer) == proTeamId || (awayTeamId as Integer) == proTeamId)  {
+        if ((home && ((home.id as Integer) == proTeamId)) || (away && ((away.id as Integer) == proTeamId)))  {
             game.date = proGame.date
             game.status = proGame.status
             game.summary = proGame.summary
-            game.homeTeamId = homeTeamId
-            game.awayTeamId = awayTeamId
-            game.homeScore = proGame.lastPlay?.homeScore
-            game.awayScore = proGame.lastPlay?.awayScore
+            game.home = home
+            game.away = away
             game.clock = proGame.clock
             game.period = proGame.period
             game.percentComplete = proGame.percentComplete
@@ -588,6 +632,14 @@ def getMatchupForTeam(teamId) {
     logDebug("No Matchup Found for Team " + teamId + " for matchup period " + state.matchupPeriodToDisplay)
 }
 
+def getTeamRosterTile(teamId) {  
+    if (!state.refreshNum) state.refreshNum = 0
+    state.refreshNum++
+    def rosterTileUrl = getTeamRosterTileEndpoint(teamId) + '&version=' + state.refreshNum   
+    def rosterTile =     "<div style='height:100%;width:100%'><iframe src='${rosterTileUrl}' style='height:100%;width:100%;border:none'></iframe></div>"
+    return rosterTile
+}
+
 def getTeamMatchupTile(teamId) {  
     if (!state.refreshNum) state.refreshNum = 0
     state.refreshNum++
@@ -643,10 +695,27 @@ def fetchTeamMatchupTile() {
     render contentType: "text/html", data: matchupTile, status: 200
 }
 
+def fetchTeamRosterTile() {
+    if(params.appId.toInteger() != app.id) {
+        logDebug("Returning null since app ID received at endpoint is ${params.appId.toInteger()} whereas the app ID of this app is ${app.id}")
+        return null    // request was not for this app/team, so return null
+    }
+    def teamId = params.teamId
+    def matchup = getMatchupForTeam(teamId)
+    def rosterTile = getRosterForMatchup(matchup, teamId)
+    render contentType: "text/html", data: rosterTile, status: 200    
+}
+
 def getTileForMatchup(matchup) {
     def defaultTextColor = getTextColorSetting()
     def defaultFontSize = getFontSizeSetting("teamInfo")
-    def matchupTile = "<div style='height:100%;'>"
+    def matchupTile = ""
+    
+    matchupTile += "<script>"
+    matchupTile += "function handleContentClick(e) { window.parent.postMessage('childContentClicked', '*') }"
+    matchupTile += "</script>"
+
+    matchupTile += "<div id='matchupDiv' onClick='handleContentClick();' style='height:100%;'>"
     if (matchup != null) {
         def awayTeamId = matchup.away ? matchup.away.teamId : null
         def homeTeamId = matchup.home ? matchup.home.teamId : null
@@ -770,6 +839,331 @@ def getTileForMatchup(matchup) {
     return matchupTile
 }
 
+def sortLineupBySlot(lineup) {
+    def sortedLineup = lineup?.sort { it.lineupSlotId }
+    def flexPlayers = sortedLineup.findAll { it.lineupSlotId == 23 }
+    def finalLineup = []
+    for (player in sortedLineup) {
+        if (player.lineupSlotId <= 6 ) finalLineup.add(player)
+    }
+    for (player in flexPlayers) {
+        finalLineup.add(player)
+    }
+    for (player in sortedLineup) {
+        if (player.lineupSlotId > 6 && player.lineupSlotId != 23) finalLineup.add(player)
+    }
+    return finalLineup
+}
+
+def getInjuryStatusStr(injuryStatus) {
+    def status = INJURY_STATUS_MAP[injuryStatus]
+    if (status) return "<span style='color: #ff0000; font-weight:bold'>" + status + "</span>"
+    else return ""
+}
+
+def processLineup(slotTypeIndex, lineup) {
+    def playerIndex = lineup.findIndexOf{ it.lineupSlotId == (slotTypeIndex as Integer) }
+    def player = null
+    if (playerIndex != -1) player = lineup.removeAt(playerIndex)
+    return [player: player, lineup: lineup]
+}
+
+def getRosterForMatchup(matchup, teamId) {
+    def defaultTextColor = getRosterTextColorSetting()
+    def defaultFontSize = getRosterFontSizeSetting()
+    def styleText = "border-collapse: collapse;font-size:${defaultFontSize}%;color:${defaultTextColor};font-family: 'Oswald, sans-serif"
+
+    def rosterTile = "<div style='height:100%;'>"
+    if (matchup != null) {
+        def team = null
+        
+        if (matchup.away && matchup.away.teamId == teamId.toInteger()) team = matchup.away
+        else if (matchup.home && matchup.home.teamId == teamId.toInteger()) team = matchup.home
+
+        if (team.lineup != null) {
+            def lineup = sortLineupBySlot(team.lineup)
+
+            rosterTile += "<table width='100%' height='100%' style='" + styleText + "'>"
+            rosterTile += "<tr bgcolor='" + rosterRowColor1 + "'>"
+            rosterTile += "<th width='10%' align=left>SLOT</th>"
+            rosterTile += "<th width='35%' align=left>PLAYER</th>"
+            rosterTile += "<th width='25%' align=left>OPP</th>"
+            rosterTile += "<th width='15%' align=center>PROJ</th>"
+            rosterTile += "<th width='15%' align=right>SCORE</th>"
+            rosterTile += "</tr>"
+            
+            def numRows = 0
+            def projectionTotal = 0
+            def scoreTotal = 0
+            def bench = false
+            SLOT_MAP.each { slotTypeIndex, slotTypeAbbr ->
+                def slotTypeCount = state.lineupSlotCounts[slotTypeIndex as String]
+                for (i = 0; i < slotTypeCount; i++) {
+                    numRows++
+                    def result = processLineup(slotTypeIndex, lineup)
+                    def player = result.player
+                    lineup = result.lineup
+                    
+                    def bgcolor = rosterRowColor1
+                    if (numRows % 2 > 0) bgcolor = rosterRowColor2
+                    rosterTile += "<tr bgcolor='" + bgcolor + "' style='font-weight:bold'>"
+
+                    def slotDescription = SLOT_MAP[slotTypeIndex as Integer]
+
+                    if (bench == false && player != null && (slotDescription == "BE" || slotDescription == "IR")) {
+                        rosterTile += "<td width = '70%' align=right colspan='3'>" + "TOTALS" + "</td>"
+                        rosterTile += "<td width = '15%' align=center>" + formatDecimal(projectionTotal) + "</td>"
+                        rosterTile += "<td width = '15%' align=right>" + formatDecimal(scoreTotal) + "</td>"
+                        rosterTile += "</tr>"
+
+                        numRows++
+                        bgcolor = rosterRowColor1
+                        if (numRows % 2 > 0) bgcolor = rosterRowColor2
+
+                        rosterTile += "<tr bgcolor='" + bgcolor + "' style='font-weight:bold'>"
+                        bench = true
+                    }
+                    rosterTile += "<td width='10%' align=left>" + slotDescription + "</td>"
+                    rosterTile += "<td width = '35%' align=left>"
+                        rosterTile += "<table width='100%' style='" + styleText + "'>"
+                        rosterTile += "<tr>"
+                            def img = null
+                            if (player != null && player.position != "D/ST" ) img = getPlayerHeadshotUrl(player.playerId)
+                            else if (player != null) img = getTeamLogo(player.proTeamId)
+                            def imgStr = img ? ("<img src='" + img + "' width='100%' style='vertical-align: top'>") : ""
+                            rosterTile += "<td rowspan='2' width='30%' align=left style='vertical-align: top'>" + imgStr + "</td>"
+
+                            def playerText = player ? (player.firstName + " " + player.lastName + " " + getInjuryStatusStr(player.injuryStatus)) : "EMPTY"
+                            rosterTile += "<td width='70%' align=left style='vertical-align: top'>" + playerText + "</td>"
+                        
+                        def teamStr = ""
+                        if (player != null) teamStr = PRO_TEAM_MAP[player.proTeamId] + " " + "<span style='font-weight:bold'>" + player.position + "</span>"
+                        rosterTile += "</tr>"
+                        rosterTile += "<tr>"
+                            rosterTile += "<td width='70%' align=left style='vertical-align: top'>" + teamStr + "</td>"
+                        rosterTile += "</tr>"
+                        rosterTile += "</table>" 
+                    rosterTile += "</td>"
+
+                    rosterTile += "<td width = '25%' align=left>"
+                        rosterTile += "<table width='100%' style='" + styleText + ";'>"
+                            rosterTile += "<tr>"
+                                rosterTile += "<td width='100%' align=left style='vertical-align: top'>" + getOppFirstLine(player) + "</td>"
+                            rosterTile += "</tr>"
+                            rosterTile += "<tr>"
+                                rosterTile += "<td width='100%' align=left style='vertical-align: top'>" + getOppSecondLine(player) + "</td>"
+                            rosterTile += "</tr>"
+                        rosterTile += "</table>" 
+                    rosterTile += "</td>"
+                    if (player && player.projectedPoints != null && player.position != "BE" && player.position != "IR") projectionTotal += player.projectedPoints
+                    if (player && player.actualPoints != null && player.position != "BE" && player.position != "IR") scoreTotal += player.actualPoints
+                    rosterTile += "<td width = '15%' align=center>" + ((player && player.projectedPoints != null) ? formatDecimal(player.projectedPoints) : "--") + "</td>"
+                    rosterTile += "<td width = '15%' align=right>" + (player && player.actualPoints != null ? formatDecimal(player.actualPoints) : "--") + "</td>"
+                    rosterTile += "</tr>"
+                }
+            }
+            rosterTile += "</table>" 
+        }
+    }
+    rosterTile += "</div>" 
+    return rosterTile
+}
+
+def getOppFirstLine(player) {
+    def oppFirstLine = ""
+    if (player && player.game?.status == "pre") {
+        if ((player.game?.home?.id as Integer) == (player.proTeamId as Integer)) {
+            if (player.game?.away?.id == null) oppFirstLine = "BYE"
+            else oppFirstLine = PRO_TEAM_MAP[(player.game?.away?.id as Integer)]
+        }
+        else if ((player.game?.away?.id as Integer) == (player.proTeamId as Integer)) {
+            if (player.game?.home?.id == null) oppFirstLine = "BYE"
+            else oppFirstLine = "@" + PRO_TEAM_MAP[(player.game?.home?.id as Integer)]
+        }
+    }
+    else if (player && (player.game?.status == "post" || player.game?.status == "in")) {
+        oppFirstLine = getPlayerStats(player)
+    }
+    return oppFirstLine
+}
+
+def getOppSecondLine(player) {
+    def secondLine = ""
+    if (player && player.game?.status == "pre") {
+        secondLine = formatGametime(player.game?.date)
+    }
+    else if (player && (player.game?.status == "post" || player.game?.status == "in")) { 
+        def opp = ""
+        if ((player.game?.home?.id as Integer) == (player.proTeamId as Integer)) {
+            if (player.game?.away?.id == null) opp = "BYE"
+            else opp = PRO_TEAM_MAP[(player.game?.away?.id as Integer)] + ", "
+        }
+        else if ((player.game?.away?.id as Integer) == (player.proTeamId as Integer)) {
+            if (player.game?.home?.id == null) opp = "BYE"
+            else opp = PRO_TEAM_MAP[(player.game?.home?.id as Integer)] + ", "
+        }
+
+        def scoreStr = ""
+        if ((player.game?.home?.id as Integer) == (player.proTeamId as Integer) && player.game?.away?.id != null) {
+            // player on home team
+            if (player.game?.status == "post") scoreStr += (player.game?.home?.winner == true) ? "W " : "L "
+            scoreStr += removeDecimal(player.game?.home?.score) + "-" + removeDecimal(player.game?.away?.score)
+        }
+        else if ((player.game?.away?.id as Integer) == (player.proTeamId as Integer) && player.game?.home?.id != null) {
+            // player on away team
+            if (player.game?.status == "post") scoreStr += (player.game?.away?.winner == true) ? "W " : "L "
+            scoreStr += removeDecimal(player.game?.away?.score) + "-" + removeDecimal(player.game?.home?.score)
+        }
+
+        def statusStr = ""
+        if (player.game?.status == "post") statusStr = " Final"
+        else if (player.game?.status == "in") {
+            statusStr = " " + QUARTER_MAP[player.game?.period] + " " + player.game?.clock
+        }
+
+        secondLine = opp + scoreStr + statusStr
+    }
+    return secondLine
+}
+
+def getPlayerStats(player) {
+    logDebug("Getting stats for player " + player)
+    def stats = ""
+    if (player.position == "QB") {
+        def passingYards = removeDecimal(player.stats['3'] ?: 0)
+        def rushingYards = removeDecimal(player.stats['24'] ?: 0)
+        def totalYards = passingYards + rushingYards
+
+        def passingTDs = removeDecimal(player.stats['4'] ?: 0)
+        def rushingTDs = removeDecimal(player.stats['25'] ?: 0)
+        def totalTDs = passingTDs + rushingTDs
+
+        def interceptions = removeDecimal(player.stats['20'] ?: 0)
+
+        stats = totalYards + " YDS"
+        if (rushingTDs == 1 && passingTDs == 0) stats += ", RUSH TD"
+        else if (rushingTDs > 1 && passingTDs == 0) stats += ", " rushingTDs + " RUSH TD"
+        else if (rushingTDs > 0 && passingTDs > 0) stats += ", " + totalTDs + " TOT TD"
+        else if (rushingTDs == 0 && passingTDs == 1) stats += ", TD"
+        else if (rushingTDs == 0 && passingTDs > 1) stats += ", " + passingTDs + " TD"
+        if (interceptions > 0) stats += ", " + interceptions + " INT"
+    }
+    else if (player.position == "RB") {
+        def rushingYards = removeDecimal(player.stats['24'] ?: 0)
+
+        def receivingTDs = removeDecimal(player.stats['43'] ?: 0)
+        def rushingTDs = removeDecimal(player.stats['25'] ?: 0)
+        def totalTDs = receivingTDs + rushingTDs
+
+        def fumbles = removeDecimal(player.stats['68'] ?: 0)
+
+        stats += rushingYards + " YDS"
+        if (receivingTDs > 0 && rushingTDs == 0) stats += ", REC TD"
+        else if (receivingTDs > 0 && rushingTDs > 0) stats += ", " + totalTDs + " TOT TD"
+        else if (rushingTDs == 1 && receivingTDs == 0) stats += ", TD"
+        else if (rushingTDs > 1 && receivingTDs == 0) stats += ", " + receivingTDs + " TD"
+        if (fumbles > 0) stats += ", " + fumbles + " FUM"
+    }
+    else if (player.position == "WR" || player.position == "TE") {
+        def receptions = removeDecimal(player.stats['41'] ?: 0)
+        def receivingYards = removeDecimal(player.stats['42'] ?: 0)
+
+        def receivingTDs = removeDecimal(player.stats['43'] ?: 0)
+        def rushingTDs = removeDecimal(player.stats['25'] ?: 0)
+        def totalTDs = receivingTDs + rushingTDs
+
+        def fumbles = removeDecimal(player.stats['68'] ?: 0)
+
+        if (receptions > 0) stats += receptions + " REC, "
+        stats += receivingYards + " YDS"
+        if (rushingTDs == 1 && receivingTDs == 0) stats += ", RUSH TD"
+        else if (rushingTDs > 1 && receivingTDs == 0) stats += ", " rushingTDs + " RUSH TD"
+        else if (rushingTDs > 0 && receivingTDs > 0) stats += ", " + totalTDs + " TOT TD"
+        else if (rushingTDs == 0 && receivingTDs == 1) stats += ", TD"
+        else if (rushingTDs == 0 && receivingTDs > 1) stats += ", " + receivingTDs + " TD"
+        if (fumbles > 0) stats += ", " + fumbles + " FUM"
+    }
+    else if (player.position == "D/ST") {
+        def touchdowns = removeDecimal(player.stats['105'] ?: 0)
+        def interceptions = removeDecimal(player.stats['95'] ?: 0)
+        def fumbleRecoveries = removeDecimal(player.stats['96'] ?: 0)
+        def safeties = removeDecimal(player.stats['98'] ?: 0)
+        def pointsAllowed = removeDecimal(player.stats['120'] ?: 0)
+        def blocks = removeDecimal(player.stats['97'] ?: 0)
+
+
+        def numStats = 0
+        if (touchDowns > 0) {
+            numStats ++
+            if (touchDowns == 1) stats += "TD"
+            else if (touchDowns > 1) stats += touchDowns += " TD"
+        }
+        if (interceptions > 0) {
+            if (numStats > 0) stats += ", "
+            numStats++
+            if (interceptions == 1) stats += "INT"
+            else if (interceptions > 1) stats += interceptions + " INT"
+        }
+        if (fumbleRecoveries > 0) {
+             if (numStats > 0) stats += ", "
+            numStats++
+            if (fumbleRecoveries == 1) stats += "FR"
+            else if (fumbleRecoveries > 1) stats += fumbleRecoveries + " FR"           
+        }
+        if (safeties > 0) {
+             if (numStats > 0) stats += ", "
+            numStats++
+            if (safeties == 1) stats += "SFTY"
+            else if (safeties > 1) stats += safeties + " SFTY"           
+        }
+        if (numStats < 4 && pointsAllowed > 0) {
+             if (numStats > 0) stats += ", "
+            numStats++
+            stats += pointsAllowed + " PA"           
+        }  
+        if (numStats < 4 && blocks > 0) {
+             if (numStats > 0) stats += ", "
+            numStats++
+            if (blocks == 1) stats += "BLK"
+            else if (blocks > 1) stats += blocks + " BLK"           
+        }      
+    }
+    else if (player.position == "K") {
+        def madeFGs = removeDecimal(player.stats['83'] ?: 0)
+        def attemptedFGs = removeDecimal(player.stats['84'] ?: 0)
+        def madeXP = removeDecimal(player.stats['86'] ?: 0)
+        def attemptedXP = removeDecimal(player.stats['87'] ?: 0)   
+
+        if (attemptedFGs > 0) stats += madeFGs + "/" + attemptedFGs + " FG"
+        if (attemptedFGs > 0 && attemptedXP > 0) stats += ", "
+        if (attemptedXP > 0) stats += madeXP + "/" + attemptedXP + " XP"
+    }
+    return stats
+}
+
+def formatGametime(date) {
+    def result = ""
+    Date gametime = getDateObjectFromUTCDt(date)
+    result = formatDt(gametime)
+    return result
+}
+
+def formatDt(dt) {
+    def tf = new SimpleDateFormat("EEE h:mm a")
+    if(location?.timeZone) { tf?.setTimeZone(location?.timeZone) }
+    else {
+        LOG("Hubitat TimeZone is not found or is not set... Please Try to open your Hubitat location and Press Save...", 1, "warn")
+        return null
+    }
+    return tf.format(dt)
+}
+
+def getDateObjectFromUTCDt(utcDt) {
+    def inFormat = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'")
+    inFormat.setTimeZone(TimeZone.getTimeZone("UTC"))
+    return inFormat.parse(utcDt)
+}
+
 def titleCase(str) {
     def lower = str.toLowerCase()
     def capitalized = lower.capitalize()
@@ -780,6 +1174,11 @@ def formatDecimal(number) {
     if (number instanceof Integer) return number
     else if (number instanceof BigDecimal) return number.setScale(getdecimalPlaceSetting(), java.math.RoundingMode.UP)
     else return number.round(getdecimalPlaceSetting())
+}
+
+def removeDecimal(number) {
+    if (number instanceof Integer) return number
+    else if (number instanceof BigDecimal) return number.setScale(0, java.math.RoundingMode.DOWN) 
 }
 
 def fetchTeams(forTeamId = null) {
@@ -817,27 +1216,17 @@ def fetchLeague() {
 }
 
 def fetchProSchedules() {
-    return sendPublicApiRequest("https://lm-api-reads.fantasy.espn.com/apis/v3/games/ffl/seasons/2024?view=proTeamSchedules_wl")
+    return sendPublicApiRequest("https://lm-api-reads.fantasy.espn.com/apis/v3/games/ffl/seasons/" + getFFLYearStart() + "?view=proTeamSchedules_wl")
+}
+
+def getTeamLogo(proTeamId) {
+    return "https://a.espncdn.com/i/teamlogos/nfl/500/scoreboard/" + PRO_TEAM_MAP[proTeamId] + ".png"
 }
 
 def fetchGames() {
+    // fetches all game data for the current week. Add "?dates=yyyyMMdd-yyyyMMdd" as url parameter to limit to certain dates
     return sendPublicApiRequest("https://site.api.espn.com/", "apis/fantasy/v2/games/ffl/games")
 }
-
-/*
-def fetchProPlayers() {
-
-        filters = {"filterActive": {"value": True}}
-        headers = {'x-fantasy-filter': json.dumps(filters)}
-
-    
-    def resutl = sendApiRequest(["players_wl"])
-    
-    return result    
-}
-*/
-
-
 
 def createDevices()
 {
@@ -883,12 +1272,12 @@ def updateDevices() {
     def leagueDeviceData = [:]
     leagueDeviceData.id = getLeagueId()
     leagueDeviceData.name = state.leagueName ?: ("FFL" + getLeagueId())
-    leagueDeviceData.tile1 = getLeagueMatchupTile(1)
-    leagueDeviceData.tile2 = getLeagueMatchupTile(2)
-    leagueDeviceData.tile3 = getLeagueMatchupTile(3)
-    leagueDeviceData.tile4 = getLeagueMatchupTile(4)
-    leagueDeviceData.tile5 = getLeagueMatchupTile(5)
-    leagueDeviceData.tile6 = getLeagueMatchupTile(6)
+    leagueDeviceData.matchup1 = getLeagueMatchupTile(1)
+    leagueDeviceData.matchup2 = getLeagueMatchupTile(2)
+    leagueDeviceData.matchup3 = getLeagueMatchupTile(3)
+    leagueDeviceData.matchup4 = getLeagueMatchupTile(4)
+    leagueDeviceData.matchup5 = getLeagueMatchupTile(5)
+    leagueDeviceData.matchup6 = getLeagueMatchupTile(6)
 
     def teamDevicesData = [:]
     def selectedTeamIDs = followedTeams.collect {it as Integer}
@@ -897,8 +1286,9 @@ def updateDevices() {
         teamDevicesData[teamId].id = teamId
         teamDevicesData[teamId].leagueId = getLeagueId()
         teamDevicesData[teamId].team = state.teams[teamId]
-        teamDevicesData[teamId].tile = getTeamMatchupTile(teamId)
-        teamDevicesData[teamId].matchup = getMatchupForTeam(teamId)
+        teamDevicesData[teamId].matchup = getTeamMatchupTile(teamId)
+        teamDevicesData[teamId].matchupData = getMatchupForTeam(teamId)
+        teamDevicesData[teamId].roster = getTeamRosterTile(teamId)
     }
     
     parent.updateDevicesForLeague(leagueDeviceData, teamDevicesData)
@@ -1056,7 +1446,7 @@ def getInterface(type, txt="", link="") {
     }
 } 
 
-@Field Map POSITION_MAP = [
+@Field Map SLOT_MAP = [
     0: 'QB',
     1: 'TQB',
     2: 'RB',
@@ -1064,6 +1454,7 @@ def getInterface(type, txt="", link="") {
     4: 'WR',
     5: 'WR/TE',
     6: 'TE',
+    23: 'FLEX',
     7: 'OP',
     8: 'DT',
     9: 'DE',
@@ -1080,25 +1471,31 @@ def getInterface(type, txt="", link="") {
     20: 'BE',
     21: 'IR',
     22: '',
-    23: 'RB/WR/TE',
     24: 'ER',
     25: 'Rookie',
-    'QB': 0,
-    'RB': 2,
-    'WR': 4,
-    'TE': 6,
-    'D/ST': 16,
-    'K': 17,
-    'FLEX': 23,
-    'DT': 8,
-    'DE': 9,
-    'LB': 10,
-    'DL': 11,
-    'CB': 12,
-    'S': 13,
-    'DB': 14,
-    'DP': 15,
-    'HC': 19
+]
+
+
+@Field Map QUARTER_MAP = [
+    1: '1st',
+    2: '2nd',
+    3: '3rd',
+    4: '4th'
+]
+@Field Map POSITION_MAP = [
+    1: 'QB',
+    2: 'RB',
+    3: 'WR',
+    4: 'TE',
+    5: 'K',
+    7: 'P', // punter
+    9: 'DT',
+    10: 'DE',
+    11: 'LB',
+    12: 'CB',
+    13: 'S',
+    14: 'HC',
+    16: 'D/ST'
 ]
 
 @Field Map PRO_TEAM_MAP = [
@@ -1135,6 +1532,14 @@ def getInterface(type, txt="", link="") {
     30: 'JAX',
     33: 'BAL',
     34: 'HOU'
+]
+
+@Field Map INJURY_STATUS_MAP = [
+    'INJURY_RESERVE' : 'IR',
+    'QUESTIONABLE' : 'Q',
+    'DOUBTFUL' : 'D',
+    'OUT' : 'O',
+    'PROBABLE' : 'P'
 ]
 
 @Field Map ACTIVITY_MAP = [

@@ -23,12 +23,12 @@ metadata
         capability "Switch"
         capability "PushableButton"
         
-        attribute "tile1", "string"
-        attribute "tile2", "string"
-        attribute "tile3", "string"
-        attribute "tile4", "string"
-        attribute "tile5", "string"
-        attribute "tile6", "string" 
+        attribute "matchup1", "string"
+        attribute "matchup2", "string"
+        attribute "matchup3", "string"
+        attribute "matchup4", "string"
+        attribute "matchup5", "string"
+        attribute "matchup6", "string" 
     }
 }
 
@@ -80,12 +80,12 @@ def updateDevicesForLeague(leagueDeviceData, teamDevicesData) {
     }
     else logDebug("League name is null")
 
-    sendEvent(name: "tile1", value: leagueDeviceData.tile1)
-    sendEvent(name: "tile2", value: leagueDeviceData.tile2)
-    sendEvent(name: "tile3", value: leagueDeviceData.tile3)
-    sendEvent(name: "tile4", value: leagueDeviceData.tile4)
-    sendEvent(name: "tile5", value: leagueDeviceData.tile5)
-    sendEvent(name: "tile6", value: leagueDeviceData.tile6) 
+    sendEvent(name: "matchup1", value: leagueDeviceData.matchup1)
+    sendEvent(name: "matchup2", value: leagueDeviceData.matchup2)
+    sendEvent(name: "matchup3", value: leagueDeviceData.matchup3)
+    sendEvent(name: "matchup4", value: leagueDeviceData.matchup4)
+    sendEvent(name: "matchup5", value: leagueDeviceData.matchup5)
+    sendEvent(name: "matchup6", value: leagueDeviceData.matchup6) 
 
     teamDevicesData.each { teamId, teamDeviceData ->
         def teamDevice = getTeamDevice(teamDeviceData)

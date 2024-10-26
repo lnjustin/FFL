@@ -18,6 +18,7 @@
  *  v1.0.2 - ingame update bug fix
  *  v1.1.0 - Added league/team child devices, in-play stats
  *  v1.1.1 - Fix tile color commands; add advanceWeek() call to initialize
+ *  v1.2.0 - Added roster
  */
 import java.text.SimpleDateFormat
 import groovy.transform.Field

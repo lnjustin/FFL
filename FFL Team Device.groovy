@@ -23,7 +23,7 @@ metadata
         capability "Switch"
         capability "PushableButton"
         
-        attribute "tile", "string"
+        attribute "matchup", "string"
         attribute "startingInjuredPlayer", "string" // bool
         attribute "minsLeft", "number"
         attribute "currentlyPlaying", "number"
@@ -36,6 +36,8 @@ metadata
         attribute "opponentYetToPlay", "number"
         attribute "opponentPoints", "number"
         attribute "opponentProjectedPoints", "number"
+
+        attribute "roster", "string"
     }
 }
 
@@ -88,23 +90,24 @@ def updateDevicesForTeam(teamDeviceData) {
         device.setName(teamDeviceData.team?.name)
     }
 
-    sendEvent(name: "tile", value: teamDeviceData.tile)
+    sendEvent(name: "matchup", value: teamDeviceData.matchup)
+    sendEvent(name: "roster", value: teamDeviceData.roster)
     sendEvent(name: "startingInjuredPlayer", value: teamDeviceData.team.startingInjuredPlayer)
-    sendEvent(name: "tile", value: teamDeviceData.tile)
 
-    def matchup = teamDeviceData.matchup
-    if (matchup && matchup.home.teamId == state.teamId) {
-        sendEvent(name: "minsLeft", value: matchup.home.minsLeft)
-        sendEvent(name: "currentlyPlaying", value: matchup.home.numCurrentlyPlaying)
-        sendEvent(name: "yetToPlay", value: matchup.home.numYetToPlay)
-        sendEvent(name: "points", value: matchup.home.totalPointsLive ?: matchup.home.totalPoints)
-        sendEvent(name: "projectedPoints", value: matchup.home.totalProjectedPointsLive ?: matchup.home.projectedScore)
-        if (matchup.away) {
-            sendEvent(name: "opponentMinsLeft", value: matchup.away.minsLeft)
-            sendEvent(name: "opponentCurrentlyPlaying", value: matchup.away.numCurrentlyPlaying)
-            sendEvent(name: "opponentYetToPlay", value: matchup.away.numYetToPlay)
-            sendEvent(name: "opponentPoints", value: matchup.away.totalPointsLive ?: matchup.away.totalPoints)
-            sendEvent(name: "opponentProjectedPoints", value: matchup.away.totalProjectedPointsLive ?: matchup.away.projectedScore)
+    def matchupData = teamDeviceData.matchupData
+
+    if (matchupData && matchupData.home && matchupData.home.teamId == state.teamId) {
+        sendEvent(name: "minsLeft", value: matchupData.home.minsLeft)
+        sendEvent(name: "currentlyPlaying", value: matchupData.home.numCurrentlyPlaying)
+        sendEvent(name: "yetToPlay", value: matchupData.home.numYetToPlay)
+        sendEvent(name: "points", value: matchupData.home.totalPointsLive ?: matchupData.home.totalPoints)
+        sendEvent(name: "projectedPoints", value: matchupData.home.totalProjectedPointsLive ?: matchupData.home.projectedScore)
+        if (matchupData.away) {
+            sendEvent(name: "opponentMinsLeft", value: matchupData.away.minsLeft)
+            sendEvent(name: "opponentCurrentlyPlaying", value: matchupData.away.numCurrentlyPlaying)
+            sendEvent(name: "opponentYetToPlay", value: matchupData.away.numYetToPlay)
+            sendEvent(name: "opponentPoints", value: matchupData.away.totalPointsLive ?: matchupData.away.totalPoints)
+            sendEvent(name: "opponentProjectedPoints", value: matchupData.away.totalProjectedPointsLive ?: matchupData.away.projectedScore)
         }
         else {
             sendEvent(name: "opponentMinsLeft", value: 0)
@@ -114,21 +117,21 @@ def updateDevicesForTeam(teamDeviceData) {
             sendEvent(name: "opponentProjectedPoints", value: 0)           
         }
 
-        if (matchup.home.numCurrentlyPlaying > 0) sendEvent(name: "switch", value: "on")
+        if (matchupData.home.numCurrentlyPlaying > 0) sendEvent(name: "switch", value: "on")
         else sendEvent(name: "switch", value: "off")
     }
-    else if (matchup && matchup.away.teamId == state.teamId) {
-        sendEvent(name: "minsLeft", value: matchup.away.minsLeft)
-        sendEvent(name: "currentlyPlaying", value: matchup.away.numCurrentlyPlaying)
-        sendEvent(name: "yetToPlay", value: matchup.away.numYetToPlay)
-        sendEvent(name: "points", value: matchup.away.totalPointsLive ?: matchup.away.totalPoints)
-        sendEvent(name: "projectedPoints", value: matchup.away.totalProjectedPointsLive ?: matchup.away.projectedScore)
-        if (matchup.home) {
-            sendEvent(name: "opponentMinsLeft", value: matchup.home.minsLeft)
-            sendEvent(name: "opponentCurrentlyPlaying", value: matchup.home.numCurrentlyPlaying)
-            sendEvent(name: "opponentYetToPlay", value: matchup.home.numYetToPlay)
-            sendEvent(name: "opponentPoints", value: matchup.home.totalPointsLive ?: matchup.home.totalPoints)
-            sendEvent(name: "opponentProjectedPoints", value: matchup.home.totalProjectedPointsLive ?: matchup.home.projectedScore)
+    else if (matchupData && matchupData.away && matchupData.away.teamId == state.teamId) {
+        sendEvent(name: "minsLeft", value: matchupData.away.minsLeft)
+        sendEvent(name: "currentlyPlaying", value: matchupData.away.numCurrentlyPlaying)
+        sendEvent(name: "yetToPlay", value: matchupData.away.numYetToPlay)
+        sendEvent(name: "points", value: matchupData.away.totalPointsLive ?: matchupData.away.totalPoints)
+        sendEvent(name: "projectedPoints", value: matchupData.away.totalProjectedPointsLive ?: matchupData.away.projectedScore)
+        if (matchupData.home) {
+            sendEvent(name: "opponentMinsLeft", value: matchupData.home.minsLeft)
+            sendEvent(name: "opponentCurrentlyPlaying", value: matchupData.home.numCurrentlyPlaying)
+            sendEvent(name: "opponentYetToPlay", value: matchupData.home.numYetToPlay)
+            sendEvent(name: "opponentPoints", value: matchupData.home.totalPointsLive ?: matchupData.home.totalPoints)
+            sendEvent(name: "opponentProjectedPoints", value: matchupData.home.totalProjectedPointsLive ?: matchupData.home.projectedScore)
         }
         else {
             sendEvent(name: "opponentMinsLeft", value: 0)
@@ -138,7 +141,7 @@ def updateDevicesForTeam(teamDeviceData) {
             sendEvent(name: "opponentProjectedPoints", value: 0)           
         }
 
-        if (matchup.away.numCurrentlyPlaying > 0) sendEvent(name: "switch", value: "on")
+        if (matchupData.away.numCurrentlyPlaying > 0) sendEvent(name: "switch", value: "on")
         else sendEvent(name: "switch", value: "off")
     }
     else {

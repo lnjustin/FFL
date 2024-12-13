@@ -30,6 +30,7 @@ metadata
         attribute "yetToPlay", "number"
         attribute "points", "number"
         attribute "projectedPoints", "number"
+        attribute "touchdowns", "number"
 
         attribute "opponentMinsLeft", "number"
         attribute "opponentCurrentlyPlaying", "number"
@@ -38,6 +39,13 @@ metadata
         attribute "opponentProjectedPoints", "number"
 
         attribute "roster", "string"
+        attribute "scoreboard", "string"
+
+        attribute "record", "string"
+        attribute "allPlayRecord", "string"
+        attribute "recordAgainstLeagueAverage", "string"
+        attribute "numLuckyWins", "number"
+        attribute "numUnluckyLosses", "number"
     }
 }
 
@@ -91,8 +99,16 @@ def updateDevicesForTeam(teamDeviceData) {
     }
 
     sendEvent(name: "matchup", value: teamDeviceData.matchup)
+    sendEvent(name: "scoreboard", value: teamDeviceData.scoreboard)
     sendEvent(name: "roster", value: teamDeviceData.roster)
     sendEvent(name: "startingInjuredPlayer", value: teamDeviceData.team.startingInjuredPlayer)
+
+    sendEvent(name: "record", value: teamDeviceData.team.record?.wins + "-" + teamDeviceData.team.record?.losses + "-" + teamDeviceData.team.record?.ties)
+    sendEvent(name: "allPlayRecord", value: teamDeviceData.team.allPlayRecord?.wins + "-" + teamDeviceData.team.allPlayRecord?.losses + "-" + teamDeviceData.team.allPlayRecord?.ties)
+    sendEvent(name: "recordAgainstLeagueAverage", value: teamDeviceData.team.recordAgainstAvg?.wins + "-" + teamDeviceData.team.recordAgainstAvg?.losses + "-" + teamDeviceData.team.recordAgainstAvg?.ties)
+    sendEvent(name: "recordWithBonusWinLoss", value: teamDeviceData.team.recordWithBonusWinLoss?.wins + "-" + teamDeviceData.team.recordWithBonusWinLoss?.losses + "-" + teamDeviceData.team.recordWithBonusWinLoss?.ties)
+    sendEvent(name: "numLuckyWins", value: teamDeviceData.team.luckStats.numLuckyWins)
+    sendEvent(name: "numUnluckyLosses", value: teamDeviceData.team.luckStats.numUnluckyLosses)
 
     def matchupData = teamDeviceData.matchupData
 
@@ -102,6 +118,7 @@ def updateDevicesForTeam(teamDeviceData) {
         sendEvent(name: "yetToPlay", value: matchupData.home.numYetToPlay)
         sendEvent(name: "points", value: matchupData.home.totalPointsLive ?: matchupData.home.totalPoints)
         sendEvent(name: "projectedPoints", value: matchupData.home.totalProjectedPointsLive ?: matchupData.home.projectedScore)
+        sendEvent(name: "touchdowns", value: matchupData.home.numTouchdowns)
         if (matchupData.away) {
             sendEvent(name: "opponentMinsLeft", value: matchupData.away.minsLeft)
             sendEvent(name: "opponentCurrentlyPlaying", value: matchupData.away.numCurrentlyPlaying)
@@ -126,6 +143,7 @@ def updateDevicesForTeam(teamDeviceData) {
         sendEvent(name: "yetToPlay", value: matchupData.away.numYetToPlay)
         sendEvent(name: "points", value: matchupData.away.totalPointsLive ?: matchupData.away.totalPoints)
         sendEvent(name: "projectedPoints", value: matchupData.away.totalProjectedPointsLive ?: matchupData.away.projectedScore)
+        sendEvent(name: "touchdowns", value: matchupData.away.numTouchdowns)
         if (matchupData.home) {
             sendEvent(name: "opponentMinsLeft", value: matchupData.home.minsLeft)
             sendEvent(name: "opponentCurrentlyPlaying", value: matchupData.home.numCurrentlyPlaying)
@@ -150,6 +168,7 @@ def updateDevicesForTeam(teamDeviceData) {
         sendEvent(name: "currentlyPlaying", value: 0)
         sendEvent(name: "yetToPlay", value: 0)
         sendEvent(name: "points", value: 0)
+        sendEvent(name: "touchdowns", value: 0)
         sendEvent(name: "projectedPoints", value: 0)
         sendEvent(name: "opponentMinsLeft", value: 0)
         sendEvent(name: "opponentCurrentlyPlaying", value: 0)

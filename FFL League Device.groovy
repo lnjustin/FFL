@@ -29,6 +29,9 @@ metadata
         attribute "matchup4", "string"
         attribute "matchup5", "string"
         attribute "matchup6", "string" 
+
+        attribute "awards", "string" 
+        attribute "ranking", "string" 
     }
 }
 
@@ -86,6 +89,9 @@ def updateDevicesForLeague(leagueDeviceData, teamDevicesData) {
     sendEvent(name: "matchup4", value: leagueDeviceData.matchup4)
     sendEvent(name: "matchup5", value: leagueDeviceData.matchup5)
     sendEvent(name: "matchup6", value: leagueDeviceData.matchup6) 
+
+    sendEvent(name: "awards", value: leagueDeviceData.awards) 
+    sendEvent(name: "ranking", value: leagueDeviceData.ranking) 
 
     teamDevicesData.each { teamId, teamDeviceData ->
         def teamDevice = getTeamDevice(teamDeviceData)

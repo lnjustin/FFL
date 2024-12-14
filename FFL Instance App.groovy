@@ -752,6 +752,47 @@ def update() {
     updateDevices()
 }
 
+def getHeadToHeadRecords(tiedTeamIDs) {
+    def tiedTeamRecords = [:]
+    for (teamId in tiedTeamIDs) {
+        def headToHeadRecord = [wins: 0, losses: 0, ties: 0]
+        state.scoreboard.each { matchup -> 
+            def matchupPeriod = matchup.matchupPeriod
+            
+            if (matchup.winner == "HOME" || matchup.winner == "AWAY") { // matchup completed
+
+                
+                // update all-play record as if this team played every other team every week
+                if (matchup.away && matchup.away.teamId == teamId && matchup.home && tiedTeamIDs.contains(matchup.home.teamId)) {
+                    if ((matchup.home.totalPoints as BigDecimal) > (matchup.away.totalPoints as BigDecimal)) {
+                        headToHeadRecord.losses++
+                    }
+                    else if ((matchup.away.totalPoints as BigDecimal) > (matchup.home.totalPoints as BigDecimal)) {
+                        headToHeadRecord.win++
+                    }
+                    else if ((matchup.away.totalPoints as BigDecimal) == (matchup.home.totalPoints as BigDecimal)) {
+                        headToHeadRecord.ties++
+                    }
+                }
+                else if (matchup.home && matchup.home.teamId == teamId && matchup.away && tiedTeamIDs.contains(matchup.away.teamId)) {
+                    if ((matchup.home.totalPoints as BigDecimal) < (matchup.away.totalPoints as BigDecimal)) {
+                        headToHeadRecord.losses++
+                    }
+                    else if ((matchup.away.totalPoints as BigDecimal) < (matchup.home.totalPoints as BigDecimal)) {
+                        headToHeadRecord.win++
+                    }
+                    else if ((matchup.away.totalPoints as BigDecimal) == (matchup.home.totalPoints as BigDecimal)) {
+                        headToHeadRecord.ties++
+                    }
+                }
+
+            }
+        }
+        tiedTeamRecords[teamId] = headToHeadRecord
+    }    
+    return tiedTeamRecords
+}
+
 def getAwards() {
     def awards = []
 
@@ -923,8 +964,10 @@ def getRanking(type = "official") {
 
         rankingToIndices.each { tiedValue, tiedIndices ->
             def tiedTeams = []
+            def tiedTeamIds = []
             tiedIndices.each { index ->
                 tiedTeams.add(ranking[index])
+                tiedTeamIds.add(ranking[index]?.teamId)
             }
             if (state.playoffSeedingRule == "TOTAL_POINTS_SCORED") {
                 // break ties based on total PF
@@ -934,20 +977,34 @@ def getRanking(type = "official") {
                 }
             }
             else if (state.playoffSeedingRule == "HEAD_TO_HEAD") {
-                // break ties based on total PF
+                // break ties based on total head to head record
                 
+                def headToHeadRecords = getHeadToHeadRecords(tiedTeamIDs)
+                tiedTeams.each { tiedTeam ->
+                    def headToHeadRecord = headToHeadRecords[tiedTeam.teamId]
+                    def winPct = ( headToHeadRecord.wins + (0.5 * headToHeadRecord.ties) ) / ( headToHeadRecord.wins + headToHeadRecord.losses + headToHeadRecord.ties)
+                    tiedTeam.headToHeadRecord = headToHeadRecord
+                    tiedTeam.headToHeadWinPct = winPct
+                }
+                tiedTeams.sort { a, b -> a.headToHeadWinPct <=> b.headToHeadWinPct }
+                tiedIndices.each { index ->
+                    ranking[index] = tiedTeams.pop()
+                }
             }
             else if (state.playoffSeedingRule == "DIVISION_RECORD") {
-                // break ties based on total PF
-                
+                // break ties based on division record
+                // TO DO
             }
             else if (state.playoffSeedingRule == "TOTAL_POINTS_AGAINST") {
-                // break ties based on total PF
-
+                // break ties based on total PA
+                tiedTeams.sort { a, b -> a.totalPointsAgainst <=> b.totalPointsAgainst }
+                tiedIndices.each { index ->
+                    ranking[index] = tiedTeams.pop()
+                }
             }
             else if (state.playoffSeedingRule == "POWER_RANK") {
-                // break ties based on total PF
-
+                // break ties based on power rank
+                // TO DO
             }
         }
 

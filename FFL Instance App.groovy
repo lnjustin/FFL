@@ -492,8 +492,8 @@ def update() {
             def matchupPeriodId = matchupIdMap[index]?.matchupPeriodId
             thisMatchup.matchupPeriod = matchupPeriodId
 
-            if (thisMatchup.home.numCurrentlyPlaying > 0) teamsInPlay.add(thisMatchup.home.teamId)
-            if (thisMatchup.away.numCurrentlyPlaying > 0) teamsInPlay.add(thisMatchup.away.teamId)
+            if (thisMatchup.home && thisMatchup.home.numCurrentlyPlaying > 0) teamsInPlay.add(thisMatchup.home.teamId)
+            if (thisMatchup.away && thisMatchup.away.numCurrentlyPlaying > 0) teamsInPlay.add(thisMatchup.away.teamId)
 
             scoreboard.add(thisMatchup)
         }

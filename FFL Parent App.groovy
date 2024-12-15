@@ -22,6 +22,7 @@
  *  v1.2.1 - Added numTouchdowns
   * v1.3.0 - Added Awards and Rankings
   * v1.3.1 - Added head to head matchup tie breaker
+  * v1.3.2 - Bug fix
  */
 import java.text.SimpleDateFormat
 import groovy.transform.Field

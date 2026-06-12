@@ -848,12 +848,12 @@ def getAwards() {
 
     if (scoring && scoring.leagueMax) {
         scoring.leagueMax.each { scoringAward ->
-            awards.add( [name: "Highest Matchup Score", teamId: scoringAward.teamId, basis: scoringAward.score.value + " Pts Wk " + scoringAward.score.key ] )
+            awards.add( [name: "Highest Matchup Score", teamId: scoringAward.teamId, basis: scoringAward.score?.value + " Pts Wk " + scoringAward.score?.key ] )
         }
     }
     if (scoring && scoring.leagueMin) {
         scoring.leagueMin.each { scoringAward ->
-            awards.add( [name: "Lowest Matchup Score", teamId: scoringAward.teamId, basis: scoringAward.score.value + " Pts Wk " + scoringAward.score.key ] )
+            awards.add( [name: "Lowest Matchup Score", teamId: scoringAward.teamId, basis: scoringAward.score?.value + " Pts Wk " + scoringAward.score?.key ] )
         }
     }
 
@@ -933,25 +933,31 @@ def getScoringAwards() {
     state.teams.each { teamId, teamData ->
         def teamMax = teamData.scoreByMatchupPeriod?.max { it.value }
         def teamMin = teamData.scoreByMatchupPeriod?.min { it.value }
-        if (leagueMax == null || leagueMax[0].score?.value < teamMax.value) leagueMax = [[teamId: teamId, score: teamMax]]
-        else if (leagueMax[0].score?.value == teamMax.value) leagueMax.add([teamId: teamId, score: teamMax])
-        if (leagueMin == null || leagueMin[0].score?.value > teamMin.value) leagueMin = [[teamId: teamId, score: teamMin]]
-        else if (leagueMin[0].score?.value == teamMin.value) leagueMin.add([teamId: teamId, score: teamMin])    }
+        if (leagueMax == null || (teamMax != null && leagueMax[0].score != null && leagueMax[0].score?.value < teamMax.value)) leagueMax = [[teamId: teamId, score: teamMax]]
+        else if (teamMax != null && leagueMax[0].score != null && leagueMax[0].score?.value == teamMax.value) leagueMax.add([teamId: teamId, score: teamMax])
+        if (leagueMin == null || (teamMin != null && leagueMin[0].score != null && leagueMin[0].score?.value > teamMin.value)) leagueMin = [[teamId: teamId, score: teamMin]]
+        else if (teamMin != null && leagueMin[0].score != null && leagueMin[0].score?.value == teamMin.value) leagueMin.add([teamId: teamId, score: teamMin])    }
     return [leagueMax: leagueMax, leagueMin: leagueMin]
 }
+
+
 
 def getRanking(type = "official") {
     def ranking = []
     state.teams.each { teamId, team ->
         def record = null
         if (type == "official") record = team.record
+        else if (type == "allWeek") record = team.allWeekRecord
         else if (type == "allPlay") record = team.allPlayRecord
         else if (type == "bonus") record = team.recordWithBonusWinLoss
 
-        def winPct = ( record.wins + (0.5 * record.ties) ) / ( record.wins + record.losses + record.ties)
-        ranking.add([teamId: team.id, winPct: winPct, record: record, playoffSeed: team.playoffSeed, totalPointsFor: team.totalPointsFor, totalPointsAgainst: team.totalPointsAgainst])
+        if (type == "final" && (team.finalRank == null || team.finalRank == 0)) return null
+        def winPct = null
+        if (type != "final" && (record.wins + record.losses + record.ties) > 0) winPct = ( record.wins + (0.5 * record.ties) ) / ( record.wins + record.losses + record.ties)
+        ranking.add([teamId: team.id, winPct: winPct, record: record, playoffSeed: team.playoffSeed, totalPointsFor: team.totalPointsFor, totalPointsAgainst: team.totalPointsAgainst, finalRank: team.finalRank])
     }
-    if (type == "official") ranking.sort { a, b -> a.playoffSeed <=> b.playoffSeed }
+    if (type == "official") ranking.sort { a, b -> a.playoffSeed <=> b.playoffSeed } // not including playoffs
+    else if (type == "final" && isRankingFinal) ranking.sort { a, b -> a.finalRank <=> b.finalRank } // including playoffs
     else {
         ranking.sort { a, b -> b.winPct <=> a.winPct }
 
@@ -982,7 +988,8 @@ def getRanking(type = "official") {
                 def headToHeadRecords = getHeadToHeadRecords(tiedTeamIDs)
                 tiedTeams.each { tiedTeam ->
                     def headToHeadRecord = headToHeadRecords[tiedTeam.teamId]
-                    def winPct = ( headToHeadRecord.wins + (0.5 * headToHeadRecord.ties) ) / ( headToHeadRecord.wins + headToHeadRecord.losses + headToHeadRecord.ties)
+                    def winPct = 0
+                    if ( (headToHeadRecord.wins + headToHeadRecord.losses + headToHeadRecord.ties) > 0) winPct = ( headToHeadRecord.wins + (0.5 * headToHeadRecord.ties) ) / ( headToHeadRecord.wins + headToHeadRecord.losses + headToHeadRecord.ties)
                     tiedTeam.headToHeadRecord = headToHeadRecord
                     tiedTeam.headToHeadWinPct = winPct
                 }
